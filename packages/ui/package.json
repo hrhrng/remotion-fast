@@ -1,0 +1,50 @@
+{
+  "name": "@remotion-fast/ui",
+  "version": "0.1.0",
+  "description": "UI components for Remotion Fast video editor",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --external react --external react-dom --external remotion --external @remotion/player --external framer-motion",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --external react --external react-dom --external remotion --external @remotion/player --external framer-motion --watch"
+  },
+  "keywords": [
+    "remotion",
+    "video-editor",
+    "ui-components"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@remotion/player": "^4.0.0",
+    "framer-motion": "^12.0.0",
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0",
+    "remotion": "^4.0.0"
+  },
+  "dependencies": {
+    "@remotion-fast/core": "workspace:*",
+    "@remotion-fast/remotion-components": "workspace:*"
+  },
+  "devDependencies": {
+    "@remotion/player": "^4.0.363",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "framer-motion": "^12.23.24",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "remotion": "^4.0.363",
+    "tsup": "^8.0.0",
+    "typescript": "^5.9.3"
+  }
+}

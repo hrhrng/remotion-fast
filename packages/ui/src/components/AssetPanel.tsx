@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
-import { useEditor } from '../state/EditorContext';
-import type { Asset, TextItem, ImageItem, VideoItem } from '../types';
-import { generateWaveform } from '../utils/waveform';
+import { useEditor } from '@remotion-fast/core';
+import type { Asset, TextItem, ImageItem, VideoItem } from '@remotion-fast/core';
+import { loadAudioWaveform } from '@remotion-fast/core';
 
 export const AssetPanel: React.FC = () => {
   const { state, dispatch } = useEditor();
@@ -96,8 +96,7 @@ export const AssetPanel: React.FC = () => {
       // Generate waveform for audio and video
       if (type === 'audio' || type === 'video') {
         try {
-          const waveformData = await generateWaveform(url, 500);
-          waveform = waveformData.peaks;
+          waveform = await loadAudioWaveform(url, 500); // Increased from 100 to 500 for finer granularity
         } catch (error) {
           console.error('Error generating waveform:', error);
         }

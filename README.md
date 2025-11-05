@@ -1,92 +1,140 @@
-# Remotion Video Editor
+# Remotion Fast
 
-A feature-rich video editor built with Remotion, inspired by the Remotion Editor Starter (but fully open source!).
+A powerful Remotion-based video editor component library built with React and TypeScript.
 
-## Features
+## 🚀 Features
 
-- **Timeline Editor**: Multi-track timeline with drag-and-drop support
-- **Visual Preview**: Real-time video preview using Remotion Player
-- **Asset Management**: Upload and manage video, audio, and image assets
-- **Text Editor**: Add and customize text overlays with full control
-- **Properties Panel**: Edit item properties including timing, colors, fonts, and more
-- **Multiple Item Types**: Support for text, solid colors, videos, images, and audio
-- **Zoom Control**: Timeline zoom for precise editing
-- **Playback Controls**: Play, pause, and scrub through your video
+- **Multi-track Timeline Editor** - Intuitive drag-and-drop timeline with zoom controls
+- **Real-time Preview** - Live video preview using Remotion Player
+- **Asset Management** - Upload and manage video, audio, and image assets
+- **Rich Text Support** - Add and customize text overlays with full styling control
+- **Multiple Item Types** - Support for text, solid colors, videos, images, and audio
+- **Modular Architecture** - Three separate packages for maximum flexibility
 
-## Getting Started
+## 📦 Packages
+
+This monorepo contains three packages:
+
+### `@remotion-fast/core`
+Core state management, types, and utilities. Framework-agnostic logic for building video editors.
+
+```bash
+npm install @remotion-fast/core
+```
+
+### `@remotion-fast/ui`
+React UI components for the video editor interface (Timeline, AssetPanel, PreviewCanvas, etc.).
+
+```bash
+npm install @remotion-fast/ui
+```
+
+### `@remotion-fast/remotion-components`
+Remotion rendering components for video composition and export.
+
+```bash
+npm install @remotion-fast/remotion-components
+```
+
+## 🏗️ Getting Started
 
 ### Installation
 
 ```bash
+# Clone the repository
+git clone <your-repo-url>
+cd remotion-fast
+
+# Install dependencies
 npm install
+
+# Build all packages
+npm run build
 ```
 
-### Development
-
-Run the Remotion Studio:
+### Run the Example
 
 ```bash
+# Run the basic editor example
 npm run dev
 ```
 
-This will open the Remotion Studio where you can preview and edit your video compositions.
+This will start the editor at http://localhost:3001
 
-### Building Videos
+### Using in Your Project
 
-Render a video:
+```tsx
+import React from 'react';
+import { Editor, EditorProvider } from '@remotion-fast/ui';
+
+function App() {
+  return (
+    <EditorProvider>
+      <Editor />
+    </EditorProvider>
+  );
+}
+```
+
+For Remotion rendering:
+
+```tsx
+import { Composition } from 'remotion';
+import { VideoComposition } from '@remotion-fast/remotion-components';
+
+export const RemotionRoot = () => {
+  return (
+    <Composition
+      id="MyVideo"
+      component={VideoComposition}
+      durationInFrames={600}
+      fps={30}
+      width={1920}
+      height={1080}
+      defaultProps={{ tracks: [...] }}
+    />
+  );
+};
+```
+
+## 📚 Documentation
+
+### Core Concepts
+
+- **Tracks**: Layers in your video composition
+- **Items**: Elements on tracks (text, video, audio, images, solids)
+- **Assets**: Media files uploaded to the editor
+- **State Management**: Centralized state using React Context + Reducer
+
+### Project Structure
+
+```
+remotion-fast/
+├── packages/
+│   ├── core/                    # State management & types
+│   ├── ui/                      # React UI components
+│   └── remotion-components/     # Remotion rendering
+└── examples/
+    └── basic-editor/            # Example implementation
+```
+
+## 🛠️ Development
 
 ```bash
-npm run build <composition-id>
+# Build all packages
+npm run build
+
+# Run example in development
+npm run dev
+
+# Clean all build artifacts
+npm run clean
 ```
 
-## Project Structure
+## 📄 License
 
-```
-src/
-├── types/              # TypeScript type definitions
-├── state/              # State management (Context + Reducer)
-├── editor/             # Editor UI components
-│   ├── PreviewCanvas.tsx
-│   ├── Timeline.tsx
-│   ├── AssetPanel.tsx
-│   └── PropertiesPanel.tsx
-├── remotion/           # Remotion video components
-│   └── VideoComposition.tsx
-├── Editor.tsx          # Main editor layout
-├── Root.tsx            # Remotion root configuration
-└── index.tsx           # Entry point
-```
+MIT License - see LICENSE file for details
 
-## How It Works
+## 🤝 Contributing
 
-### Architecture
-
-1. **State Management**: Uses React Context + useReducer for centralized state
-2. **Remotion Player**: Renders the video preview in real-time
-3. **Timeline**: Visual representation of tracks and items
-4. **Drag & Drop**: Move items between tracks and adjust timing
-
-### Adding Content
-
-1. **Text**: Click "+ Text" in the Assets panel
-2. **Colors**: Click "+ Color" to add solid color backgrounds
-3. **Media**: Upload images, videos, or audio files
-4. **Edit**: Select items to edit properties in the Properties panel
-
-### Timeline Controls
-
-- **Zoom**: Use +/- buttons to zoom in/out
-- **Playhead**: Click timeline to jump to a specific frame
-- **Drag Items**: Drag items to reposition them on the timeline
-- **Tracks**: Add multiple tracks for layering content
-
-## Technologies
-
-- **Remotion**: Programmatic video creation framework
-- **React**: UI framework
-- **TypeScript**: Type safety
-- **@remotion/player**: Video preview component
-
-## License
-
-MIT License - Free to use and modify
+Contributions are welcome! Please feel free to submit a Pull Request.

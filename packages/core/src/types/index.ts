@@ -23,6 +23,7 @@ export type TextItem = BaseItem & {
 export type VideoItem = BaseItem & {
   type: 'video';
   src: string;
+  volume?: number; // Audio volume for video (0-2 range)
   waveform?: number[];
   videoFadeIn?: number; // Video fade in duration in frames
   videoFadeOut?: number; // Video fade out duration in frames
