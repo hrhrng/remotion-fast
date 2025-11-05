@@ -3,10 +3,7 @@ import type { EditorState, EditorAction, Track, Item, Asset } from '../types';
 
 // Initial state
 const initialState: EditorState = {
-  tracks: [
-    { id: 'track-1', name: 'Track 1', items: [] },
-    { id: 'track-2', name: 'Track 2', items: [] },
-  ],
+  tracks: [],
   selectedItemId: null,
   selectedTrackId: null,
   currentFrame: 0,

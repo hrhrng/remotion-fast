@@ -25,6 +25,22 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
         tracks: [...state.tracks, action.payload],
       };
 
+    case 'INSERT_TRACK': {
+      console.log('INSERT_TRACK reducer called with:', action.payload);
+      const newTracks = [...state.tracks];
+      const { track, index } = action.payload;
+
+      // Insert at specific index
+      newTracks.splice(index, 0, track);
+
+      console.log('New tracks after insertion:', newTracks);
+
+      return {
+        ...state,
+        tracks: newTracks,
+      };
+    }
+
     case 'REMOVE_TRACK':
       return {
         ...state,

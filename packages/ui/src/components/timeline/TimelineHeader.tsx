@@ -11,7 +11,6 @@ interface TimelineHeaderProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onToggleSnap: () => void;
-  onAddTrack: () => void;
 }
 
 export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
@@ -22,7 +21,6 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
   onZoomIn,
   onZoomOut,
   onToggleSnap,
-  onAddTrack,
 }) => {
   const canZoomIn = zoom < timeline.zoomMax;
   const canZoomOut = zoom > timeline.zoomMin;
@@ -197,30 +195,6 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
           <span>吸附 {snapEnabled ? 'ON' : 'OFF'}</span>
         </motion.button>
       </div>
-
-      {/* 右侧：添加轨道按钮 */}
-      <motion.button
-        onClick={onAddTrack}
-        style={{
-          height: 32,
-          padding: '0 16px',
-          backgroundColor: colors.accent.primary,
-          border: 'none',
-          borderRadius: borderRadius.md,
-          color: '#FFFFFF',
-          fontSize: typography.fontSize.sm,
-          fontWeight: typography.fontWeight.medium,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-        }}
-        whileHover={{ scale: 1.02, boxShadow: shadows.hover }}
-        whileTap={{ scale: 0.98 }}
-      >
-        <span style={{ fontSize: typography.fontSize.lg }}>+</span>
-        <span>添加轨道</span>
-      </motion.button>
     </div>
   );
 };

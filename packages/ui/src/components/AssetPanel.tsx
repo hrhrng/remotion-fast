@@ -3,6 +3,9 @@ import { useEditor } from '@remotion-fast/core';
 import type { Asset, TextItem, ImageItem, VideoItem } from '@remotion-fast/core';
 import { loadAudioWaveform } from '@remotion-fast/core';
 
+// Export for TimelineTracksContainer to use
+export let currentDraggedAsset: any = null;
+
 export const AssetPanel: React.FC = () => {
   const { state, dispatch } = useEditor();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -121,28 +124,66 @@ export const AssetPanel: React.FC = () => {
   };
 
   const handleAssetDragStart = (e: React.DragEvent, asset: Asset) => {
-    e.dataTransfer.setData('asset', JSON.stringify(asset));
+    console.log('Drag started with asset:', asset);
+    currentDraggedAsset = asset; // Store globally
     e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer.setData('text/plain', asset.id); // Use text/plain for better compatibility
+    e.dataTransfer.setData('assetId', asset.id);
+    e.dataTransfer.setData('asset', JSON.stringify(asset));
+    console.log('Set assetId:', asset.id);
   };
 
   const handleAddTextToTrack = () => {
-    const firstTrack = state.tracks[0];
-    if (firstTrack) {
-      const textItem: TextItem = {
-        id: `text-${Date.now()}`,
-        type: 'text',
-        text: 'Double click to edit',
-        color: '#000000',
-        from: state.currentFrame,
-        durationInFrames: 90, // 3 seconds at 30fps
-        fontSize: 60,
-      };
+    // Always create a new track when adding items from the panel
+    const trackId = `track-${Date.now()}`;
 
+    // First create a new track
+    dispatch({
+      type: 'ADD_TRACK',
+      payload: {
+        id: trackId,
+        name: 'Text',
+        items: []
+      }
+    });
+
+    // Then add the text item to the new track
+    const textItem: TextItem = {
+      id: `text-${Date.now()}`,
+      type: 'text',
+      text: 'Double click to edit',
+      color: '#000000',
+      from: state.currentFrame,
+      durationInFrames: 90, // 3 seconds at 30fps
+      fontSize: 60,
+    };
+
+    // Use setTimeout to ensure track is created first
+    setTimeout(() => {
       dispatch({
         type: 'ADD_ITEM',
-        payload: { trackId: firstTrack.id, item: textItem },
+        payload: { trackId, item: textItem },
       });
-    }
+    }, 0);
+  };
+
+  // Handle dragging Quick Add items
+  const handleQuickAddDragStart = (e: React.DragEvent, type: 'text' | 'solid') => {
+    // Create a pseudo-asset for quick add items
+    const pseudoAsset = {
+      id: `quick-${type}-${Date.now()}`,
+      name: type === 'text' ? 'Text' : 'Color',
+      type: type as 'text' | 'solid',
+      src: '',
+      createdAt: Date.now(),
+    };
+
+    currentDraggedAsset = { ...pseudoAsset, quickAdd: true, quickAddType: type }; // Store globally
+    e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer.setData('text/plain', pseudoAsset.id); // Use text/plain for compatibility
+    e.dataTransfer.setData('assetId', pseudoAsset.id);
+    e.dataTransfer.setData('quickAdd', 'true');
+    e.dataTransfer.setData('quickAddType', type);
   };
 
   return (
@@ -156,29 +197,54 @@ export const AssetPanel: React.FC = () => {
         <div style={styles.section}>
           <h3 style={styles.sectionTitle}>Quick Add</h3>
           <div style={styles.quickButtons}>
-            <button onClick={handleAddTextToTrack} style={styles.quickButton}>
+            <button
+              onClick={handleAddTextToTrack}
+              style={styles.quickButton}
+              draggable
+              onDragStart={(e) => handleQuickAddDragStart(e, 'text')}
+              title="Click to add or drag to timeline"
+            >
               + Text
             </button>
             <button
               onClick={() => {
-                const firstTrack = state.tracks[0];
-                if (firstTrack) {
+                // Always create a new track when adding items from the panel
+                const trackId = `track-${Date.now()}`;
+
+                // First create a new track
+                dispatch({
+                  type: 'ADD_TRACK',
+                  payload: {
+                    id: trackId,
+                    name: 'Solid',
+                    items: []
+                  }
+                });
+
+                // Then add the solid item to the new track
+                const solidItem = {
+                  id: `solid-${Date.now()}`,
+                  type: 'solid' as const,
+                  color: '#' + Math.floor(Math.random() * 16777215).toString(16),
+                  from: state.currentFrame,
+                  durationInFrames: 60,
+                };
+
+                // Use setTimeout to ensure track is created first
+                setTimeout(() => {
                   dispatch({
                     type: 'ADD_ITEM',
                     payload: {
-                      trackId: firstTrack.id,
-                      item: {
-                        id: `solid-${Date.now()}`,
-                        type: 'solid',
-                        color: '#' + Math.floor(Math.random() * 16777215).toString(16),
-                        from: state.currentFrame,
-                        durationInFrames: 60,
-                      },
+                      trackId,
+                      item: solidItem,
                     },
                   });
-                }
+                }, 0);
               }}
               style={styles.quickButton}
+              draggable
+              onDragStart={(e) => handleQuickAddDragStart(e, 'solid')}
+              title="Click to add or drag to timeline"
             >
               + Color
             </button>
@@ -296,10 +362,11 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '8px',
     backgroundColor: '#3d3d3d',
     color: 'white',
-    border: 'none',
+    border: '1px solid #4d4d4d',
     borderRadius: '4px',
-    cursor: 'pointer',
+    cursor: 'grab',
     fontSize: '14px',
+    transition: 'all 0.2s ease',
   },
   uploadButton: {
     width: '100%',

@@ -86,6 +86,7 @@ export type EditorState = {
 // Editor actions
 export type EditorAction =
   | { type: 'ADD_TRACK'; payload: Track }
+  | { type: 'INSERT_TRACK'; payload: { track: Track; index: number } }
   | { type: 'REMOVE_TRACK'; payload: string }
   | { type: 'UPDATE_TRACK'; payload: { id: string; updates: Partial<Track> } }
   | { type: 'REORDER_TRACKS'; payload: Track[] }

@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Track, Asset, Item } from '../../types';
+import type { Track, Asset, Item } from '@remotion-fast/core';
 import { TimelineItem } from './TimelineItem';
 import { colors, timeline, typography, borderRadius, shadows, withOpacity } from './styles';
 import { frameToPixels } from './utils/timeFormatter';
@@ -271,53 +271,22 @@ export const TimelineTrack: React.FC<TimelineTrackProps> = ({
         onDragOver={onDragOver}
         onDrop={onDrop}
       >
-        {/* 时间网格背景 */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: totalWidth,
-            height: '100%',
-            pointerEvents: 'none',
-          }}
-        >
-          {/* 可以在这里添加网格线 */}
-        </div>
-
-        {/* 素材项 */}
-        <div
-          style={{
-            position: 'absolute',
-            top: timeline.itemVerticalPadding,
-            left: 0,
-            right: 0,
-            bottom: timeline.itemVerticalPadding,
-            display: 'flex',
-            gap: 0,
-          }}
-        >
-          {track.items.map((item) => (
-            <div
-              key={item.id}
-              style={{
-                position: 'absolute',
-                left: frameToPixels(item.from, pixelsPerFrame),
-                top: 0,
-              }}
-            >
-              <TimelineItem
-                item={item}
-                pixelsPerFrame={pixelsPerFrame}
-                isSelected={selectedItemId === item.id}
-                assets={assets}
-                onSelect={() => onSelectItem(item.id)}
-                onDelete={() => onDeleteItem(item.id)}
-                onResize={(edge, deltaFrames) => handleItemResize(item.id, edge, deltaFrames)}
-              />
-            </div>
-          ))}
-        </div>
+        {/* 直接渲染素材项，不需要额外包装 */}
+        {track.items.map((item) => (
+          <TimelineItem
+            key={item.id}
+            item={item}
+            trackId={track.id}
+            track={track}
+            pixelsPerFrame={pixelsPerFrame}
+            isSelected={selectedItemId === item.id}
+            assets={assets}
+            onSelect={() => onSelectItem(item.id)}
+            onDelete={() => onDeleteItem(item.id)}
+            onUpdate={onUpdateItem}
+            onResize={(edge, deltaFrames) => handleItemResize(item.id, edge, deltaFrames)}
+          />
+        ))}
       </div>
     </div>
   );

@@ -2,7 +2,7 @@
  * 吸附计算工具
  */
 
-import { Item, Track } from '../../../types';
+import type { Item, Track } from '@remotion-fast/core';
 import { timeline } from '../styles';
 
 export interface SnapTarget {
