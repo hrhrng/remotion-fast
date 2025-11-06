@@ -45,7 +45,19 @@ export type ImageItem = BaseItem & {
   src: string;
 };
 
-export type Item = SolidItem | TextItem | VideoItem | AudioItem | ImageItem;
+export type StickerItem = BaseItem & {
+  type: 'sticker';
+  // Either animated webp/gif, or an image sequence.
+  src: string;
+  // Optional sequence metadata for future support
+  sequence?: {
+    baseUrl: string; // e.g., /frames/frame_####.png
+    frameCount: number;
+    fps: number;
+  };
+};
+
+export type Item = SolidItem | TextItem | VideoItem | AudioItem | ImageItem | StickerItem;
 
 // Track definition
 export type Track = {
