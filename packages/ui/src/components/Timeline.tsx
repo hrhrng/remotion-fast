@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, DragStartEvent, DragOverEvent, DragEndEvent } from '@dnd-kit/core';
+import { DndContext, MouseSensor, TouchSensor, KeyboardSensor, useSensor, useSensors, DragStartEvent, DragOverEvent, DragEndEvent, DragMoveEvent } from '@dnd-kit/core';
 import { useEditor } from '@remotion-fast/core';
 import type { Item } from '@remotion-fast/core';
 import { TimelineHeader } from './timeline/TimelineHeader';
@@ -55,7 +55,8 @@ export const Timeline: React.FC = () => {
   const pixelsPerFrame = getPixelsPerFrame(zoom);
   // dnd-kit sensors
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 2 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 2 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 6 } }),
     useSensor(KeyboardSensor)
   );
 
@@ -65,6 +66,8 @@ export const Timeline: React.FC = () => {
     if (!data || !data.item) return;
     const item = data.item as Item;
     const trackId = data.trackId as string;
+    // eslint-disable-next-line no-console
+    console.log('[DND] onDragStart', { id: item.id, trackId, rect: event.active.rect.current });
 
     setDraggedItem({ trackId, item });
     window.currentDraggedItem = { trackId, item };
@@ -74,23 +77,26 @@ export const Timeline: React.FC = () => {
     const offsetX = activator && 'clientX' in activator ? activator.clientX - initialLeft : 0;
     setDragOffset(offsetX);
 
-    setDragPreview({
+    const nextPreview = {
       itemId: item.id,
       item,
       originalTrackId: trackId,
       originalFrom: item.from,
       previewTrackId: trackId,
       previewFrame: item.from,
-    });
+    };
+    // eslint-disable-next-line no-console
+    console.log('[DND] init preview', nextPreview);
+    setDragPreview(nextPreview);
   }, []);
 
-  // dnd-kit: item drag over -> update preview
-  const onDndItemOver = useCallback((event: DragOverEvent) => {
+  // dnd-kit: item drag move/over -> update preview
+  const updatePreviewFromDnd = (
+    leftOnViewport: number,
+    topOnViewport: number,
+    heightPx: number
+  ) => {
     if (!draggedItem || !dragPreview) return;
-
-    const translated = event.active.rect.current.translated;
-    const leftOnViewport = translated?.left ?? ((event.active.rect.current.initial?.left || 0) + (event.delta?.x || 0));
-    const topOnViewport = translated?.top ?? ((event.active.rect.current.initial?.top || 0) + (event.delta?.y || 0));
 
     const container = containerRef.current;
     const viewportEl = document.querySelector('.tracks-viewport') as HTMLDivElement | null;
@@ -112,18 +118,44 @@ export const Timeline: React.FC = () => {
       timelineStyles.snapThreshold
     );
 
-    const height = event.active.rect.current?.translated?.height || event.active.rect.current?.initial?.height || 0;
-    const centerY = topOnViewport + height / 2;
+    const centerY = topOnViewport + heightPx / 2;
     const yInViewport = centerY - viewportRect.top + viewportEl.scrollTop;
     const trackIndex = Math.max(0, Math.min(tracks.length - 1, Math.floor(yInViewport / timelineStyles.trackHeight)));
     const trackId = tracks[trackIndex]?.id || dragPreview.previewTrackId;
 
-    setDragPreview({
+    const next = {
       ...dragPreview,
       previewTrackId: trackId,
       previewFrame: Math.max(0, snapResult.snappedFrame),
+    };
+    // eslint-disable-next-line no-console
+    console.log('[DND] update preview', {
+      leftWithinTracks,
+      rawFrame,
+      snappedFrame: next.previewFrame,
+      trackIndex,
+      trackId,
+      edge: snapResult.edge,
+      target: snapResult.target,
     });
-  }, [draggedItem, dragPreview, pixelsPerFrame, tracks, currentFrame, snapEnabled]);
+    setDragPreview(next);
+  };
+
+  const onDndItemMove = useCallback((event: DragMoveEvent) => {
+    const translated = event.active.rect.current.translated;
+    const height = translated?.height || event.active.rect.current.initial?.height || 0;
+    const left = translated?.left ?? ((event.active.rect.current.initial?.left || 0) + event.delta.x);
+    const top = translated?.top ?? ((event.active.rect.current.initial?.top || 0) + event.delta.y);
+    updatePreviewFromDnd(left, top, height);
+  }, [updatePreviewFromDnd]);
+
+  const onDndItemOver = useCallback((event: DragOverEvent) => {
+    const translated = event.active.rect.current.translated;
+    const height = translated?.height || event.active.rect.current.initial?.height || 0;
+    const left = translated?.left ?? ((event.active.rect.current.initial?.left || 0) + (event.delta?.x || 0));
+    const top = translated?.top ?? ((event.active.rect.current.initial?.top || 0) + (event.delta?.y || 0));
+    updatePreviewFromDnd(left, top, height);
+  }, [updatePreviewFromDnd]);
 
   // dnd-kit: item drag end -> commit move
   const onDndItemEnd = useCallback((event: DragEndEvent) => {
@@ -136,6 +168,13 @@ export const Timeline: React.FC = () => {
     }
 
     const { item, originalTrackId, previewTrackId, previewFrame } = dragPreview;
+    // eslint-disable-next-line no-console
+    console.log('[DND] onDragEnd', {
+      itemId: item.id,
+      fromTrack: originalTrackId,
+      toTrack: previewTrackId,
+      frame: previewFrame,
+    });
     const targetTrackId = previewTrackId || originalTrackId;
     if (originalTrackId === targetTrackId) {
       dispatch({
@@ -712,7 +751,7 @@ export const Timeline: React.FC = () => {
         </div>
 
         {/* 轨道容器 - dnd-kit 包裹，仅用于 item 移动；资产拖入仍走原生 */}
-        <DndContext sensors={sensors} onDragStart={onDndItemStart} onDragOver={onDndItemOver} onDragEnd={onDndItemEnd}>
+        <DndContext sensors={sensors} onDragStart={onDndItemStart} onDragMove={onDndItemMove} onDragOver={onDndItemOver} onDragEnd={onDndItemEnd}>
           <TimelineTracksContainer
             durationInFrames={displayDurationInFrames}
             pixelsPerFrame={pixelsPerFrame}
