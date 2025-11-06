@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, CSSProperties } from 'react';
+import { useDraggable } from '@dnd-kit/core';
 import { motion } from 'framer-motion';
 import type { Item, Asset, Track } from '@remotion-fast/core';
 import { useEditor } from '@remotion-fast/core';
@@ -36,6 +37,7 @@ interface TimelineItemProps {
   onSelect: () => void;
   onDelete: () => void;
   onUpdate: (itemId: string, updates: Partial<Item>) => void;
+  // Legacy native DnD callbacks (kept for compatibility with old flow if needed)
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
   onResizeStart?: (edge: 'left' | 'right') => void;
@@ -676,15 +678,28 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
     }
   };
 
+  // dnd-kit draggable (overlay-only integration; does not alter static layout)
+  const {attributes, listeners, setNodeRef, isDragging} = useDraggable({
+    id: `item-${item.id}`,
+    data: {
+      item,
+      trackId,
+      from: item.from,
+      durationInFrames: item.durationInFrames,
+    },
+  });
+
   // Decoupled renderers: first enable for image/text, others keep existing path
   const useNewRenderer = item.type === 'image' || item.type === 'text';
   const Renderer = React.useMemo(() => getRendererForItem(item), [item.type]);
 
   return (
     <div
-      draggable
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
+      // dnd-kit takes over dragging; disable native dragging to avoid conflicts
+      draggable={false}
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={handleClick}
@@ -709,7 +724,7 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
         backgroundSize: useNewRenderer ? 'cover' : (item.type === 'image' ? 'contain' : (isDynamicReady ? 'auto 100%' : 'cover')),
         backgroundPosition: 'left top',
         backgroundRepeat: 'no-repeat',
-        opacity: track.hidden ? 0.3 : 1,
+        opacity: (track.hidden ? 0.3 : 1) * (isDragging ? 0.35 : 1),
         ...customStyle, // 应用自定义样式（可以覆盖默认样式，如opacity）
       }}
     >

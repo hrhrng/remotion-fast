@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, DragStartEvent, DragOverEvent, DragEndEvent } from '@dnd-kit/core';
 import { useEditor } from '@remotion-fast/core';
 import type { Item } from '@remotion-fast/core';
 import { TimelineHeader } from './timeline/TimelineHeader';
@@ -7,7 +8,7 @@ import { TimelineTracksContainer } from './timeline/TimelineTracksContainer';
 import { TimelinePlayhead } from './timeline/TimelinePlayhead';
 import { useKeyboardShortcuts } from './timeline/hooks/useKeyboardShortcuts';
 import { colors, timeline as timelineStyles, typography } from './timeline/styles';
-import { getPixelsPerFrame, pixelsToFrame, frameToPixels } from './timeline/utils/timeFormatter';
+import { getPixelsPerFrame, pixelsToFrame, frameToPixels, secondsToFrames } from './timeline/utils/timeFormatter';
 import { calculateSnap, calculateSnapForItemRange } from './timeline/utils/snapCalculator';
 
 // 声明全局window属性
@@ -52,6 +53,106 @@ export const Timeline: React.FC = () => {
   const [viewportContentWidth, setViewportContentWidth] = useState(0);
 
   const pixelsPerFrame = getPixelsPerFrame(zoom);
+  // dnd-kit sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 2 } }),
+    useSensor(KeyboardSensor)
+  );
+
+  // dnd-kit: item drag start
+  const onDndItemStart = useCallback((event: DragStartEvent) => {
+    const data: any = event.active.data.current;
+    if (!data || !data.item) return;
+    const item = data.item as Item;
+    const trackId = data.trackId as string;
+
+    setDraggedItem({ trackId, item });
+    window.currentDraggedItem = { trackId, item };
+
+    const initialLeft = event.active.rect.current.initial?.left ?? 0;
+    const activator = event.activatorEvent as PointerEvent | MouseEvent | null;
+    const offsetX = activator && 'clientX' in activator ? activator.clientX - initialLeft : 0;
+    setDragOffset(offsetX);
+
+    setDragPreview({
+      itemId: item.id,
+      item,
+      originalTrackId: trackId,
+      originalFrom: item.from,
+      previewTrackId: trackId,
+      previewFrame: item.from,
+    });
+  }, []);
+
+  // dnd-kit: item drag over -> update preview
+  const onDndItemOver = useCallback((event: DragOverEvent) => {
+    if (!draggedItem || !dragPreview) return;
+
+    const translated = event.active.rect.current.translated;
+    const leftOnViewport = translated?.left ?? ((event.active.rect.current.initial?.left || 0) + (event.delta?.x || 0));
+    const topOnViewport = translated?.top ?? ((event.active.rect.current.initial?.top || 0) + (event.delta?.y || 0));
+
+    const container = containerRef.current;
+    const viewportEl = document.querySelector('.tracks-viewport') as HTMLDivElement | null;
+    if (!container || !viewportEl) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const viewportRect = viewportEl.getBoundingClientRect();
+
+    const leftWithinTracks = leftOnViewport - containerRect.left - timelineStyles.trackLabelWidth;
+    const rawFrame = Math.max(0, Math.floor(leftWithinTracks / pixelsPerFrame));
+
+    const snapResult = calculateSnapForItemRange(
+      rawFrame,
+      draggedItem.item.durationInFrames,
+      tracks,
+      draggedItem.item.id,
+      currentFrame,
+      !!snapEnabled,
+      timelineStyles.snapThreshold
+    );
+
+    const height = event.active.rect.current?.translated?.height || event.active.rect.current?.initial?.height || 0;
+    const centerY = topOnViewport + height / 2;
+    const yInViewport = centerY - viewportRect.top + viewportEl.scrollTop;
+    const trackIndex = Math.max(0, Math.min(tracks.length - 1, Math.floor(yInViewport / timelineStyles.trackHeight)));
+    const trackId = tracks[trackIndex]?.id || dragPreview.previewTrackId;
+
+    setDragPreview({
+      ...dragPreview,
+      previewTrackId: trackId,
+      previewFrame: Math.max(0, snapResult.snappedFrame),
+    });
+  }, [draggedItem, dragPreview, pixelsPerFrame, tracks, currentFrame, snapEnabled]);
+
+  // dnd-kit: item drag end -> commit move
+  const onDndItemEnd = useCallback((event: DragEndEvent) => {
+    if (!dragPreview) {
+      setDraggedItem(null);
+      setDragOffset(0);
+      setDragPreview(null);
+      window.currentDraggedItem = null;
+      return;
+    }
+
+    const { item, originalTrackId, previewTrackId, previewFrame } = dragPreview;
+    const targetTrackId = previewTrackId || originalTrackId;
+    if (originalTrackId === targetTrackId) {
+      dispatch({
+        type: 'UPDATE_ITEM',
+        payload: { trackId: targetTrackId, itemId: item.id, updates: { from: Math.max(0, previewFrame) } },
+      });
+    } else {
+      dispatch({ type: 'REMOVE_ITEM', payload: { trackId: originalTrackId, itemId: item.id } });
+      dispatch({ type: 'ADD_ITEM', payload: { trackId: targetTrackId, item: { ...item, from: Math.max(0, previewFrame) } } });
+    }
+
+    dispatch({ type: 'SELECT_ITEM', payload: item.id });
+    setDraggedItem(null);
+    setDragOffset(0);
+    setDragPreview(null);
+    window.currentDraggedItem = null;
+  }, [dragPreview, dispatch]);
 
   // Measure available content width (excluding the fixed track label gutter).
   // We use it to:
@@ -610,30 +711,33 @@ export const Timeline: React.FC = () => {
           </div>
         </div>
 
-        {/* 轨道容器 - 独立的视觉容器 */}
-        <TimelineTracksContainer
-          durationInFrames={displayDurationInFrames}
-          pixelsPerFrame={pixelsPerFrame}
-          fps={fps}
-          snapEnabled={snapEnabled}
-          selectedTrackId={selectedTrackId}
-          selectedItemId={selectedItemId}
-          assets={assets}
-          onSelectTrack={handleSelectTrack}
-          onSelectItem={handleSelectItem}
-          onDeleteItem={handleDeleteItem}
-          onUpdateItem={handleUpdateItem}
-          onDragOver={handleDragOver}
-          onDrop={handleDrop}
-          onEmptyDrop={handleTimelineDrop}
-          onItemDragStart={handleItemDragStart}
-          onItemDragOver={handleItemDragOver}
-          onItemDrop={handleItemDrop}
-          onItemDragEnd={handleItemDragEnd}
-          dragPreview={dragPreview}
-          onScrollXChange={setScrollLeft}
-          viewportWidth={viewportContentWidth}
-        />
+        {/* 轨道容器 - dnd-kit 包裹，仅用于 item 移动；资产拖入仍走原生 */}
+        <DndContext sensors={sensors} onDragStart={onDndItemStart} onDragOver={onDndItemOver} onDragEnd={onDndItemEnd}>
+          <TimelineTracksContainer
+            durationInFrames={displayDurationInFrames}
+            pixelsPerFrame={pixelsPerFrame}
+            fps={fps}
+            snapEnabled={snapEnabled}
+            selectedTrackId={selectedTrackId}
+            selectedItemId={selectedItemId}
+            assets={assets}
+            onSelectTrack={handleSelectTrack}
+            onSelectItem={handleSelectItem}
+            onDeleteItem={handleDeleteItem}
+            onUpdateItem={handleUpdateItem}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            onEmptyDrop={handleTimelineDrop}
+            // 关闭原生 item 拖拽通道
+            onItemDragStart={() => {}}
+            onItemDragOver={() => {}}
+            onItemDrop={() => {}}
+            onItemDragEnd={handleItemDragEnd}
+            dragPreview={dragPreview}
+            onScrollXChange={setScrollLeft}
+            viewportWidth={viewportContentWidth}
+          />
+        </DndContext>
 
         {/* 播放头 - 覆盖层 */}
         <div
