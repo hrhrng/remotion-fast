@@ -88,6 +88,20 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
   const [scrollSync, setScrollSync] = useState({ x: 0, y: 0 });
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [insertPosition, setInsertPosition] = useState<number | null>(null);
+  // Keep the track labels vertically aligned with tracks when a horizontal
+  // scrollbar appears in the tracks viewport (e.g. on Windows where scrollbars take space).
+  // We measure the horizontal scrollbar height and add equivalent bottom padding to the
+  // left labels panel so both columns end at the same visual baseline.
+  const [hScrollbar, setHScrollbar] = useState(0);
+
+  const measureScrollbars = useCallback(() => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    // Horizontal scrollbar thickness (height) = offsetHeight - clientHeight
+    const horiz = Math.max(0, vp.offsetHeight - vp.clientHeight);
+    // Only update when changed to avoid re-renders while scrolling
+    setHScrollbar((prev) => (prev !== horiz ? horiz : prev));
+  }, []);
 
   // 同步垂直滚动（标签面板 ↔ 轨道视口）
   // Sync vertical scroll between labels and tracks; report horizontal scroll to parent.
@@ -101,8 +115,10 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
       const scrollLeft = viewportRef.current.scrollLeft;
       setScrollSync(prev => ({ ...prev, x: scrollLeft }));
       onScrollXChange?.(scrollLeft);
+      // Re-measure in case scrollbar visibility changed while scrolling
+      measureScrollbars();
     }
-  }, [onScrollXChange]);
+  }, [onScrollXChange, measureScrollbars]);
 
   const handleLabelsScroll = useCallback(() => {
     if (labelsRef.current && viewportRef.current) {
@@ -111,6 +127,14 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
       setScrollSync(prev => ({ ...prev, y: scrollTop }));
     }
   }, []);
+
+  // Measure on mount and whenever layout-affecting props change
+  useEffect(() => {
+    measureScrollbars();
+    const onResize = () => measureScrollbars();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [measureScrollbars, durationInFrames, pixelsPerFrame, viewportWidth]);
 
   // 拖放处理
   const handleContainerDragEnter = useCallback((e: React.DragEvent) => {
@@ -441,6 +465,9 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
           position: 'sticky',
           left: 0,
           zIndex: 10,
+          // Reserve space equal to the horizontal scrollbar in the tracks viewport
+          // so the last row aligns when scrolled to bottom (esp. on Windows).
+          paddingBottom: hScrollbar,
           // 隐藏滚动条但保持可滚动
           scrollbarWidth: 'none',
           msOverflowStyle: 'none',

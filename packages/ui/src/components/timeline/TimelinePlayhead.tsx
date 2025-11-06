@@ -29,6 +29,11 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
   const [isHovered, setIsHovered] = useState(false);
 
   const position = frameToPixels(currentFrame, pixelsPerFrame);
+  // 把 gap 也纳入坐标系：播放头相对“内容区”的 x = labelWidth + gap + position - scrollLeft
+  const gap = (timeline as any).labelViewportGap ?? 0;
+  const centerX = timeline.trackLabelWidth + gap + position - scrollLeft + timeline.playheadWidth / 2;
+  const lineLeft = centerX - timeline.playheadWidth / 2;
+  const triangleLeft = centerX - timeline.playheadTriangleSize / 2;
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -65,22 +70,19 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
     <div
       style={{
         position: 'absolute',
-        // Align with tracks area: add label gutter and subtract scrollLeft
-        // The playhead sits in the overlay layer, so we translate by
-        // the fixed label gutter (left) and compensate for the tracks viewport scroll.
-        left: timeline.trackLabelWidth + position - scrollLeft,
         top: 0,
+        left: 0,
+        right: 0,
         bottom: 0,
-        width: timeline.playheadWidth,
         zIndex: zIndex.playhead,
         pointerEvents: 'none',
       }}
     >
-      {/* 播放头线 */}
+      {/* 竖线：始终渲染。通过 label 面板更高的 z-index 进行遮挡 */}
       <div
         style={{
           position: 'absolute',
-          left: 0,
+          left: lineLeft,
           top: 0,
           bottom: 0,
           width: timeline.playheadWidth,
@@ -101,7 +103,8 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
         transition={animations.springGentle}
         style={{
           position: 'absolute',
-          left: -timeline.playheadTriangleSize / 2 + timeline.playheadWidth / 2,
+          // 三角以中心轴定位，使尖端与竖线中心对齐
+          left: triangleLeft,
           top: -1,
           width: 0,
           height: 0,
@@ -111,6 +114,8 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
           cursor: 'ew-resize',
           pointerEvents: 'auto',
           filter: isDragging ? 'drop-shadow(0 0 4px rgba(74, 158, 255, 0.8))' : 'none',
+          // 三角形也始终渲染，由更高 z-index 的 label 遮挡
+          display: 'block',
         }}
       >
         {/* Tooltip - 显示当前时间 */}

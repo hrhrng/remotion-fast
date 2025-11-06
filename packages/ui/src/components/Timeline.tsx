@@ -45,6 +45,7 @@ export const Timeline: React.FC = () => {
     previewTrackId: string;
     previewFrame: number;
   } | null>(null);
+  const [insertPosition, setInsertPosition] = useState<number | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -799,6 +800,27 @@ export const Timeline: React.FC = () => {
             scrollLeft={scrollLeft}
           />
         </div>
+<<<<<<< ours
+<<<<<<< ours
+=======
+
+        {/* 左侧 ruler 遮罩（覆盖 label+gap 对应的上方区域，保证三角也被遮住） */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: timelineStyles.trackLabelWidth + (timelineStyles as any).labelViewportGap,
+            height: timelineStyles.rulerHeight,
+            background: `linear-gradient(180deg, ${colors.bg.secondary} 0%, ${colors.bg.elevated} 100%)`,
+            borderRight: `1px solid ${colors.border.default}`,
+            pointerEvents: 'none',
+            zIndex: 25,
+          }}
+        />
+>>>>>>> theirs
+=======
+>>>>>>> theirs
       </div>
     </div>
   );
