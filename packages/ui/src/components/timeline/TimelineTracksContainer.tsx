@@ -698,15 +698,15 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                           });
                         }
                       }}
-                      // 如果是被拖动的item，让它半透明
+                      // 如果是被拖动的item，让它半透明（仅在原生拖拽或资产拖拽预览时）
                       style={{
-                        opacity: dragPreview?.itemId === item.id ? 0.3 : 1,
+                        opacity: dragPreview?.itemId === item.id && !window.currentDraggedItem ? 0.3 : 1,
                       }}
                     />
                   ))}
 
-                  {/* 渲染预览影子（在目标位置） */}
-                  {dragPreview && dragPreview.previewTrackId === track.id && (
+                  {/* 渲染预览影子（在目标位置） - dnd 拖动已有项时不显示 */}
+                  {dragPreview && dragPreview.previewTrackId === track.id && !window.currentDraggedItem && (
                     <div
                       style={{
                         position: 'absolute',

@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef, CSSProperties } from 'react';
 import { useDraggable } from '@dnd-kit/core';
+import { CSS as DndCSS } from '@dnd-kit/utilities';
 import { motion } from 'framer-motion';
 import type { Item, Asset, Track } from '@remotion-fast/core';
 import { useEditor } from '@remotion-fast/core';
@@ -679,7 +680,7 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
   };
 
   // dnd-kit draggable (overlay-only integration; does not alter static layout)
-  const {attributes, listeners, setNodeRef, isDragging} = useDraggable({
+  const {attributes, listeners, setNodeRef, isDragging, transform} = useDraggable({
     id: `item-${item.id}`,
     data: {
       item,
@@ -726,7 +727,7 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
         width: width,
         height: `${itemHeight}px`,
         top: '50%',
-        transform: 'translateY(-50%)',
+        transform: `${transform ? DndCSS.Transform.toString(transform) : ''} translateY(-50%)`,
         backgroundColor: getColor(),
         borderRadius: '4px',
         border: isSelected
@@ -740,8 +741,10 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
         backgroundSize: useNewRenderer ? 'cover' : (item.type === 'image' ? 'contain' : (isDynamicReady ? 'auto 100%' : 'cover')),
         backgroundPosition: 'left top',
         backgroundRepeat: 'no-repeat',
-        opacity: (track.hidden ? 0.3 : 1) * (isDragging ? 0.35 : 1),
+        opacity: (track.hidden ? 0.3 : 1),
         outline: isDragging ? '1px dashed rgba(0, 153, 255, 0.8)' : 'none',
+        zIndex: isDragging ? 1000 : undefined,
+        willChange: isDragging ? 'transform' : undefined,
         ...customStyle, // 应用自定义样式（可以覆盖默认样式，如opacity）
       }}
     >
