@@ -646,6 +646,10 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
     }
   };
 
+  // Decoupled renderers: first enable for image/text, others keep existing path
+  const useNewRenderer = item.type === 'image' || item.type === 'text';
+  const Renderer = React.useMemo(() => getRendererForItem(item), [item.type]);
+
   return (
     <div
       draggable
@@ -670,15 +674,21 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
         cursor: 'move',
         overflow: 'hidden',
         boxSizing: 'border-box',
-        backgroundImage: (hasWaveform || item.type === 'audio') ? 'none' : (displayThumbnail ? `url(${displayThumbnail})` : 'none'),
+        backgroundImage: (useNewRenderer || hasWaveform || item.type === 'audio') ? 'none' : (displayThumbnail ? `url(${displayThumbnail})` : 'none'),
         // Dynamic ready -> 'auto 100%'; fallback poster -> 'cover' to fill width immediately
-        backgroundSize: item.type === 'image' ? 'contain' : (isDynamicReady ? 'auto 100%' : 'cover'),
+        backgroundSize: useNewRenderer ? 'cover' : (item.type === 'image' ? 'contain' : (isDynamicReady ? 'auto 100%' : 'cover')),
         backgroundPosition: 'left top',
         backgroundRepeat: 'no-repeat',
         opacity: track.hidden ? 0.3 : 1,
         ...customStyle, // 应用自定义样式（可以覆盖默认样式，如opacity）
       }}
     >
+      {/* New renderer (image/text) */}
+      {useNewRenderer && (
+        <div style={{ position: 'absolute', inset: 0 }}>
+          <Renderer item={item} asset={asset} width={width} height={itemHeight} pixelsPerFrame={pixelsPerFrame} />
+        </div>
+      )}
       {/* Thumbnail for video with waveform */}
       {item.type === 'video' && hasWaveform && (
         <div
