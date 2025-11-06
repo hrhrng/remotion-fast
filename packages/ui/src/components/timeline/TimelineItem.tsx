@@ -146,13 +146,7 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
       ctx.fillStyle = 'black';
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
-      console.log('🎬 Generating dynamic thumbnail:', {
-        duration,
-        totalFrames,
-        pixelsPerFrame,
-        timelinePixelWidth,
-        displayHeight,
-      });
+      // Generate filmstrip progressively; avoid runtime logs in production
 
       // 1) Ensure we have a max-sample filmstrip cached for this asset
       const ensureFilmstrip = async (
@@ -640,16 +634,13 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
   );
 
   const handleDragStart = (e: React.DragEvent) => {
-    console.log('🚀 TimelineItem handleDragStart', { item, trackId });
-
+    // Forward to parent; avoid debug logs in production
     if (onDragStartProp) {
       onDragStartProp(e);
     }
   };
 
   const handleDragEnd = (e: React.DragEvent) => {
-    console.log('🏁 TimelineItem handleDragEnd');
-
     if (onDragEndProp) {
       onDragEndProp(e);
     }

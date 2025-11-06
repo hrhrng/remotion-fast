@@ -75,27 +75,5 @@ export function getPixelsPerFrame(zoom: number): number {
  * @param zoom 缩放级别
  * @returns 主刻度间隔（帧数）
  */
-export function getRulerInterval(zoom: number): number {
-  if (zoom >= 2) {
-    return 5;   // 高缩放：每 5 帧
-  } else if (zoom >= 1) {
-    return 15;  // 中缩放：每 15 帧
-  } else {
-    return 30;  // 低缩放：每 30 帧
-  }
-}
-
-/**
- * 获取次刻度间隔
- * @param mainInterval 主刻度间隔
- * @returns 次刻度间隔
- */
-export function getSubInterval(mainInterval: number): number {
-  if (mainInterval <= 5) {
-    return 1;  // 主刻度 5 帧时，次刻度 1 帧
-  } else if (mainInterval <= 15) {
-    return 5;  // 主刻度 15 帧时，次刻度 5 帧
-  } else {
-    return 10; // 主刻度 30 帧时，次刻度 10 帧
-  }
-}
+// Note: previous getRulerInterval/getSubInterval utilities were removed.
+// The ruler now derives tick density from pixel spacing directly inside TimelineRuler.tsx

@@ -21,6 +21,11 @@ interface TimelineRulerProps {
   contentEndInFrames?: number;
 }
 
+// Timeline ruler renders scalable ticks/labels with pixel-driven spacing.
+// - Major labels pick a second-step ensuring ≥80px spacing (1/2/5/10/15/30/60...s).
+// - Minor ticks aim for ~major/10, clamped by ≥8px.
+// - Only generate ticks up to contentEndInFrames to avoid "extra" labels beyond media.
+// - SVG strokes snap to 0.5px for crisp 1px lines on all DPRs.
 export const TimelineRuler: React.FC<TimelineRulerProps> = ({
   durationInFrames,
   pixelsPerFrame,
@@ -36,7 +41,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
 
   // Layout targets
   const MIN_LABEL_SPACING_PX = 80; // Prevent label overlap
-  const MIN_SUBTICK_SPACING_PX = 8;
+  const MIN_SUBTICK_SPACING_PX = 8; // Avoid dense hairlines that blur visually
 
   // Choose label (major) step in seconds to achieve readable spacing
   const pxPerSecond = fps * pixelsPerFrame;
@@ -109,7 +114,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
   }, [durationInFrames, contentEndInFrames, minorStepFrames, majorStepFrames, pixelsPerFrame]);
 
   // Pixel snapping for crisp 1px SVG strokes
-  const crisp = (x: number) => Math.round(x) + 0.5;
+  const crisp = (x: number) => Math.round(x) + 0.5; // align 1px strokes to device pixels
 
   const handleClick = (e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();

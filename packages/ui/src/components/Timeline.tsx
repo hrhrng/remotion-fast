@@ -53,7 +53,10 @@ export const Timeline: React.FC = () => {
 
   const pixelsPerFrame = getPixelsPerFrame(zoom);
 
-  // Measure available content width (excluding track label gutter)
+  // Measure available content width (excluding the fixed track label gutter).
+  // We use it to:
+  // 1) prevent the empty timeline from scrolling horizontally;
+  // 2) clamp the ruler/track min widths for a stable layout.
   useEffect(() => {
     const measure = () => {
       const el = workspaceRef.current ?? containerRef.current;
@@ -67,7 +70,8 @@ export const Timeline: React.FC = () => {
   }, []);
 
   // Derive display length for UI (ruler + tracks)
-  // Longest content end (in frames)
+  // Longest content end (in frames) across all tracks.
+  // This is the authoritative bound for generating ticks/labels.
   const contentEndInFrames = useMemo(() => {
     // Longest item end frame
     let maxEnd = 0;
@@ -81,8 +85,11 @@ export const Timeline: React.FC = () => {
     return maxEnd;
   }, [tracks]);
 
+  // Final UI width in frames for ruler + tracks.
+  // With items: slightly extend beyond content end for a bit of visual breathing room.
+  // Without items: fill exactly the visible viewport width (no horizontal scroll).
   const displayDurationInFrames = useMemo(() => {
-    const padFrames = Math.max(15, fps); // ~1s padding, at least 15f
+    const padFrames = Math.max(15, fps); // ≈1s padding, min 15f
     const framesFromItems = contentEndInFrames > 0 ? contentEndInFrames + padFrames : 0;
 
     if (tracks.length === 0 || framesFromItems === 0) {
@@ -519,12 +526,12 @@ export const Timeline: React.FC = () => {
       },
       onZoomIn: handleZoomIn,
       onZoomOut: handleZoomOut,
-      // TODO: 实现复制、粘贴、撤销、重做
-      onCopy: () => console.log('Copy not yet implemented'),
-      onPaste: () => console.log('Paste not yet implemented'),
-      onDuplicate: () => console.log('Duplicate not yet implemented'),
-      onUndo: () => console.log('Undo not yet implemented'),
-      onRedo: () => console.log('Redo not yet implemented'),
+      // Reserved shortcuts (no-op for now to avoid console noise in production)
+      onCopy: () => {},
+      onPaste: () => {},
+      onDuplicate: () => {},
+      onUndo: () => {},
+      onRedo: () => {},
     },
     true
   );

@@ -66,6 +66,8 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
       style={{
         position: 'absolute',
         // Align with tracks area: add label gutter and subtract scrollLeft
+        // The playhead sits in the overlay layer, so we translate by
+        // the fixed label gutter (left) and compensate for the tracks viewport scroll.
         left: timeline.trackLabelWidth + position - scrollLeft,
         top: 0,
         bottom: 0,

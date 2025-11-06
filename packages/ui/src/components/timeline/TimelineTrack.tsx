@@ -3,7 +3,8 @@ import { motion } from 'framer-motion';
 import type { Track, Asset, Item } from '@remotion-fast/core';
 import { TimelineItem } from './TimelineItem';
 import { colors, timeline, typography, borderRadius, shadows, withOpacity } from './styles';
-import { frameToPixels } from './utils/timeFormatter';
+import { frameToPixels, secondsToFrames } from './utils/timeFormatter';
+import { useEditor } from '@remotion-fast/core';
 
 interface TimelineTrackProps {
   track: Track;
@@ -34,6 +35,8 @@ export const TimelineTrack: React.FC<TimelineTrackProps> = ({
   onDragOver,
   onDrop,
 }) => {
+  // Use global editor state for fps so we never assume 30fps in calculations
+  const { state } = useEditor();
   const [isHovered, setIsHovered] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState(track.name);
@@ -85,8 +88,8 @@ export const TimelineTrack: React.FC<TimelineTrackProps> = ({
       if ((item.type === 'video' || item.type === 'audio') && 'src' in item) {
         const asset = assets.find((a) => a.src === item.src);
         if (asset?.duration) {
-          // 将秒转换为帧 (假设 30fps)
-          maxDurationInFrames = Math.floor(asset.duration * 30);
+          // Convert seconds to frames using project fps (no 30fps magic number)
+          maxDurationInFrames = secondsToFrames(asset.duration, state.fps);
         }
       }
 

@@ -13,6 +13,10 @@ declare global {
   }
 }
 
+// Tracks viewport + labels with drag/drop and scroll syncing.
+// Notes:
+// - `onScrollXChange` keeps ruler and playhead horizontally aligned with tracks.
+// - `viewportWidth` prevents empty timeline from scrolling and keeps ruler/track widths stable.
 interface TimelineTracksContainerProps {
   durationInFrames: number;
   pixelsPerFrame: number;
@@ -83,6 +87,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
   const [insertPosition, setInsertPosition] = useState<number | null>(null);
 
   // 同步垂直滚动（标签面板 ↔ 轨道视口）
+  // Sync vertical scroll between labels and tracks; report horizontal scroll to parent.
   const handleViewportScroll = useCallback(() => {
     if (viewportRef.current && labelsRef.current) {
       const scrollTop = viewportRef.current.scrollTop;
@@ -95,8 +100,6 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
       onScrollXChange?.(scrollLeft);
     }
   }, [onScrollXChange]);
-
-  // no-op
 
   const handleLabelsScroll = useCallback(() => {
     if (labelsRef.current && viewportRef.current) {
