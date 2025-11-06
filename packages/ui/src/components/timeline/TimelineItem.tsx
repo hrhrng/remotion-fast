@@ -5,6 +5,7 @@ import { useEditor } from '@remotion-fast/core';
 import { colors, timeline, typography, shadows, animations, borderRadius } from './styles';
 import { getItemColor, withOpacity } from './styles';
 import { frameToPixels, secondsToFrames } from './utils/timeFormatter';
+import { getRendererForItem } from './items/registry';
 
 // Simple in-memory cache for per-asset filmstrips built at a high sample rate
 type FilmstripCacheEntry = {
@@ -106,7 +107,11 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
   const itemHeight = hasVideoWithThumbnail ? 60 : (hasWaveform ? 56 : 44);
   const borderSize = isSelected ? 2 : 1;
   const availableHeight = itemHeight - (borderSize * 2);
-  const thumbnailHeight = hasVideoWithThumbnail ? 30 : (hasWaveform ? Math.floor(availableHeight * 0.6) : 44);
+  // For video items with both thumbnail and waveform, use a 7:3 ratio (thumbnail:waveform)
+  // Keep existing behavior for other item types
+  const thumbnailHeight = hasVideoWithThumbnail
+    ? Math.max(1, Math.floor(availableHeight * 0.7))
+    : (hasWaveform ? Math.floor(availableHeight * 0.6) : 44);
 
   // Dynamic thumbnail generation based on zoom level
   const [dynamicThumbnail, setDynamicThumbnail] = React.useState<string | null>(null);
@@ -353,7 +358,12 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
   const isDynamicReady = Boolean(dynamicThumbnail);
 
   // (removed) Previously used to stretch thumbnail to fit width.
-  const waveformHeight = hasWaveform ? (hasVideoWithThumbnail ? 28 : availableHeight - thumbnailHeight) : 0;
+  // Match 3:7 ratio when video has waveform; otherwise keep previous calculation
+  const waveformHeight = hasWaveform
+    ? (hasVideoWithThumbnail
+      ? Math.max(0, availableHeight - thumbnailHeight)
+      : availableHeight - thumbnailHeight)
+    : 0;
 
   // Get audio/video properties
   const audioFadeIn = ((item.type === 'video' || item.type === 'audio') && 'audioFadeIn' in item)
@@ -613,11 +623,31 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
       onResizeStart?.(edge);
 
       const startX = e.clientX;
+      // Auto-scroll support when resizing towards edges
+      // Find the horizontal scroll container (tracks viewport)
+      const viewportEl = (e.currentTarget as HTMLElement).closest('.tracks-viewport') as HTMLDivElement | null;
+      const SCROLL_EDGE = 40; // px from edge to start autoscroll
+      const MAX_STEP = 40; // px per mousemove tick (capped)
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
         const deltaX = moveEvent.clientX - startX;
         const deltaFrames = Math.round(deltaX / pixelsPerFrame);
         onResize?.(edge, deltaFrames);
+
+        // Auto-scroll horizontally if cursor nears viewport edges
+        if (viewportEl) {
+          const vr = viewportEl.getBoundingClientRect();
+          const x = moveEvent.clientX;
+          let step = 0;
+          if (x > vr.right - SCROLL_EDGE) {
+            step = Math.min(MAX_STEP, (x - (vr.right - SCROLL_EDGE)) * 0.5);
+          } else if (x < vr.left + SCROLL_EDGE) {
+            step = -Math.min(MAX_STEP, ((vr.left + SCROLL_EDGE) - x) * 0.5);
+          }
+          if (step !== 0) {
+            viewportEl.scrollLeft += step;
+          }
+        }
       };
 
       const handleMouseUp = () => {

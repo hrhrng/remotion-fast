@@ -17,6 +17,12 @@ export interface SnapResult {
   didSnap: boolean;
 }
 
+// 拖动物料（整体）时，既可能希望左边缘吸附，也可能希望右边缘吸附。
+// 该结果在常规 SnapResult 基础上，额外返回究竟是哪个边缘发生了吸附。
+export interface SnapItemRangeResult extends SnapResult {
+  edge: 'left' | 'right' | null;
+}
+
 /**
  * 计算吸附位置
  * @param frame 当前帧位置
@@ -94,7 +100,10 @@ export function calculateSnap(
   let minDistance = threshold;
 
   snapTargets.forEach((target) => {
-    const distance = Math.abs(target.frame - frame);
+    // 对"网格"吸附施加轻微的距离惩罚，优先让素材边缘/播放头被吸附
+    // 这样能减少“总往网格吸”的不自然感
+    const penalty = target.type === 'grid' ? 0.25 : 0;
+    const distance = Math.abs(target.frame - frame) + penalty;
     if (distance < minDistance) {
       minDistance = distance;
       closestTarget = target;
@@ -138,6 +147,73 @@ export function calculateResizeSnap(
 ): SnapResult {
   // 调整大小时的吸附逻辑与普通吸附类似，但只关注边缘
   return calculateSnap(frame, tracks, currentItemId, playheadFrame, snapEnabled, threshold);
+}
+
+/**
+ * 计算整个素材在拖动时的吸附（考虑左/右两边缘）
+ * 传入素材原始起点和时长，返回吸附后的起点及吸附边缘。
+ */
+export function calculateSnapForItemRange(
+  rawFromFrame: number,
+  durationInFrames: number,
+  tracks: Track[],
+  currentItemId: string | null,
+  playheadFrame: number,
+  snapEnabled: boolean = true,
+  threshold: number = timeline.snapThreshold
+): SnapItemRangeResult {
+  if (!snapEnabled) {
+    return {
+      snappedFrame: rawFromFrame,
+      target: null,
+      didSnap: false,
+      edge: null,
+    };
+  }
+
+  // 左边缘吸附
+  const leftSnap = calculateSnap(
+    rawFromFrame,
+    tracks,
+    currentItemId,
+    playheadFrame,
+    snapEnabled,
+    threshold
+  );
+
+  // 右边缘吸附（对右边缘进行吸附，然后推导新的起点）
+  const rawRight = rawFromFrame + durationInFrames;
+  const rightSnap = calculateSnap(
+    rawRight,
+    tracks,
+    currentItemId,
+    playheadFrame,
+    snapEnabled,
+    threshold
+  );
+
+  // 计算两种方式的“移动量”
+  const leftDelta = Math.abs(leftSnap.snappedFrame - rawFromFrame);
+  const snappedFromByRight = rightSnap.snappedFrame - durationInFrames;
+  const rightDelta = Math.abs(snappedFromByRight - rawFromFrame);
+
+  // 在两者都触发吸附时，选择移动量更小的方案；
+  // 若只有其一触发吸附，则选择该方案；若都未吸附，则返回原值。
+  if (leftSnap.didSnap && rightSnap.didSnap) {
+    if (leftDelta <= rightDelta) {
+      return { ...leftSnap, edge: 'left' };
+    }
+    return { snappedFrame: Math.max(0, snappedFromByRight), target: rightSnap.target, didSnap: true, edge: 'right' };
+  }
+
+  if (leftSnap.didSnap) {
+    return { ...leftSnap, edge: 'left' };
+  }
+  if (rightSnap.didSnap) {
+    return { snappedFrame: Math.max(0, snappedFromByRight), target: rightSnap.target, didSnap: true, edge: 'right' };
+  }
+
+  return { snappedFrame: rawFromFrame, target: null, didSnap: false, edge: null };
 }
 
 /**

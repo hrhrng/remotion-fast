@@ -5,6 +5,7 @@ import { colors, timeline, spacing, shadows, getItemColor, withOpacity, borderRa
 import { secondsToFrames } from './utils/timeFormatter';
 import { TimelineItem } from './TimelineItem';
 import { currentDraggedAsset } from '../AssetPanel';
+import { calculateResizeSnap } from './utils/snapCalculator';
 
 // Declare the global window property for TypeScript
 declare global {
@@ -21,6 +22,7 @@ interface TimelineTracksContainerProps {
   durationInFrames: number;
   pixelsPerFrame: number;
   fps: number;
+  snapEnabled?: boolean;
   selectedTrackId: string | null;
   selectedItemId: string | null;
   assets: Asset[];
@@ -56,6 +58,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
   durationInFrames,
   pixelsPerFrame,
   fps,
+  snapEnabled = true,
   selectedTrackId,
   selectedItemId,
   assets,
@@ -412,10 +415,11 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
         marginTop: 0, // sit flush under ruler to avoid double separator
         marginLeft: 0, // keep left perfectly aligned with ruler
         boxShadow: shadows.sm,
-        border: isDraggingOver
-          ? `1px solid ${colors.accent.primary}`
-          : `1px solid ${colors.border.default}`,
-        borderLeft: '0', // remove left border to match ruler row (prevents +1px shift)
+        // Avoid mixing border shorthand with borderLeft to prevent React warning.
+        borderTop: `1px solid ${isDraggingOver ? colors.accent.primary : colors.border.default}`,
+        borderRight: `1px solid ${isDraggingOver ? colors.accent.primary : colors.border.default}`,
+        borderBottom: `1px solid ${isDraggingOver ? colors.accent.primary : colors.border.default}`,
+        borderLeft: 0,
         position: 'relative',
       }}
       onDragEnter={handleContainerDragEnter}
@@ -647,12 +651,40 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                           }
                         }
 
-                        const newFrom = edge === 'left'
-                          ? Math.max(0, item.from + deltaFrames)
-                          : item.from;
-                        let newDuration = edge === 'left'
-                          ? item.durationInFrames + (item.from - newFrom)
-                          : Math.max(15, item.durationInFrames + deltaFrames);
+                        let newFrom = item.from;
+                        let newDuration = item.durationInFrames;
+
+                        if (edge === 'left') {
+                          const rawFrom = Math.max(0, item.from + deltaFrames);
+
+                          // 应用吸附（左边缘）
+                          const snapped = calculateResizeSnap(
+                            rawFrom,
+                            'left',
+                            state.tracks,
+                            item.id,
+                            state.currentFrame,
+                            !!snapEnabled,
+                            timeline.snapThreshold
+                          );
+                          newFrom = snapped.snappedFrame;
+                          newDuration = item.from + item.durationInFrames - newFrom;
+                        } else {
+                          const rawDuration = Math.max(15, item.durationInFrames + deltaFrames);
+                          const rawRight = item.from + rawDuration;
+
+                          // 应用吸附（右边缘）
+                          const snapped = calculateResizeSnap(
+                            rawRight,
+                            'right',
+                            state.tracks,
+                            item.id,
+                            state.currentFrame,
+                            !!snapEnabled,
+                            timeline.snapThreshold
+                          );
+                          newDuration = Math.max(15, snapped.snappedFrame - item.from);
+                        }
 
                         // 限制最大时长不超过素材实际时长
                         if (maxDurationInFrames && newDuration > maxDurationInFrames) {
@@ -682,18 +714,15 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                         top: '50%',
                         transform: 'translateY(-50%)',
                         width: dragPreview.item.durationInFrames * pixelsPerFrame,
-                        height: '48px', // 和TimelineItem的itemHeight一致
-                        backgroundColor: withOpacity(
-                          getItemColor(
-                            dragPreview.item.type,
-                            dragPreview.item.type === 'solid' ? dragPreview.item.color : undefined
-                          ),
-                          0.4
-                        ),
-                        borderRadius: '4px',
+                        height: 56, // 统一使用接近项高度的可视尺寸
+                        backgroundColor: 'rgba(255,255,255,0.55)',
+                        border: '1px solid rgba(255,255,255,0.9)',
+                        borderRadius: 6,
+                        boxShadow: '0 2px 10px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(0,0,0,0.08)',
                         pointerEvents: 'none',
                         zIndex: 999,
                         boxSizing: 'border-box',
+                        backdropFilter: 'saturate(110%)',
                       }}
                     />
                   )}

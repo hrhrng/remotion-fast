@@ -8,7 +8,7 @@ import { TimelinePlayhead } from './timeline/TimelinePlayhead';
 import { useKeyboardShortcuts } from './timeline/hooks/useKeyboardShortcuts';
 import { colors, timeline as timelineStyles, typography } from './timeline/styles';
 import { getPixelsPerFrame, pixelsToFrame, frameToPixels } from './timeline/utils/timeFormatter';
-import { calculateSnap } from './timeline/utils/snapCalculator';
+import { calculateSnap, calculateSnapForItemRange } from './timeline/utils/snapCalculator';
 
 // 声明全局window属性
 declare global {
@@ -86,11 +86,10 @@ export const Timeline: React.FC = () => {
   }, [tracks]);
 
   // Final UI width in frames for ruler + tracks.
-  // With items: slightly extend beyond content end for a bit of visual breathing room.
+  // With items: extend to 1.3x of longest item for better UX headroom.
   // Without items: fill exactly the visible viewport width (no horizontal scroll).
   const displayDurationInFrames = useMemo(() => {
-    const padFrames = Math.max(15, fps); // ≈1s padding, min 15f
-    const framesFromItems = contentEndInFrames > 0 ? contentEndInFrames + padFrames : 0;
+    const framesFromItems = contentEndInFrames > 0 ? Math.ceil(contentEndInFrames * 1.3) : 0;
 
     if (tracks.length === 0 || framesFromItems === 0) {
       if (viewportContentWidth <= 0) return durationInFrames; // fallback
@@ -351,12 +350,14 @@ export const Timeline: React.FC = () => {
 
       // 计算吸附 - Shift键禁用吸附
       const disableSnap = e.shiftKey || !snapEnabled;
-      const snapResult = calculateSnap(
+      // 拖动物料时，优先让左/右边缘都可吸附，选择移动量更小的方案
+      const snapResult = calculateSnapForItemRange(
         rawFrame,
+        draggedItem.item.durationInFrames,
         tracks,
-        draggedItem.item.id, // 排除自己
+        draggedItem.item.id,
         currentFrame,
-        disableSnap,
+        !disableSnap,
         timelineStyles.snapThreshold
       );
 
@@ -605,7 +606,6 @@ export const Timeline: React.FC = () => {
               zoom={zoom}
               scrollLeft={scrollLeft}
               viewportWidth={viewportContentWidth}
-              contentEndInFrames={contentEndInFrames || undefined}
             />
           </div>
         </div>
@@ -615,6 +615,7 @@ export const Timeline: React.FC = () => {
           durationInFrames={displayDurationInFrames}
           pixelsPerFrame={pixelsPerFrame}
           fps={fps}
+          snapEnabled={snapEnabled}
           selectedTrackId={selectedTrackId}
           selectedItemId={selectedItemId}
           assets={assets}
