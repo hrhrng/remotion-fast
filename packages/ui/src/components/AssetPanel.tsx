@@ -10,7 +10,7 @@ export const AssetPanel: React.FC = () => {
   const { state, dispatch } = useEditor();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const generateVideoThumbnail = (videoUrl: string): Promise<string> => {
+  const generateVideoThumbnail = (videoUrl: string): Promise<{ thumbnail: string; frameCount: number; frameWidth: number }> => {
     return new Promise((resolve) => {
       const video = document.createElement('video');
       video.src = videoUrl;
@@ -20,21 +20,25 @@ export const AssetPanel: React.FC = () => {
       video.addEventListener('loadedmetadata', async () => {
         try {
           const duration = video.duration;
-          const frameInterval = 1; // 每1秒提取一帧
-          const startTime = 0.1; // 从0.1秒开始
-          const frameCount = Math.min(Math.floor((duration - startTime) / frameInterval) + 1, 20); // 最多20帧
+          const frameInterval = 1.0; // 每1秒提取一帧
+          const startTime = 0.5; // 从0.5秒开始
+          const frameCount = Math.min(Math.floor((duration - startTime) / frameInterval) + 1, 100); // 最多100帧
 
-          const frameWidth = video.videoWidth;
-          const frameHeight = video.videoHeight;
+          const originalFrameWidth = video.videoWidth;
+          const originalFrameHeight = video.videoHeight;
+
+          // 设置每一帧的目标宽度（横向裁剪/缩放）
+          const targetFrameHeight = 80; // 固定高度
+          const targetFrameWidth = Math.floor((originalFrameWidth / originalFrameHeight) * targetFrameHeight);
 
           // 创建一个宽画布来容纳所有帧
           const canvas = document.createElement('canvas');
-          canvas.width = frameWidth * frameCount;
-          canvas.height = frameHeight;
+          canvas.width = targetFrameWidth * frameCount;
+          canvas.height = targetFrameHeight;
           const ctx = canvas.getContext('2d');
 
           if (!ctx) {
-            resolve(videoUrl);
+            resolve({ thumbnail: videoUrl, frameCount: 1, frameWidth: 1 });
             return;
           }
 
@@ -52,26 +56,34 @@ export const AssetPanel: React.FC = () => {
               video.currentTime = Math.min(time, duration - 0.1);
             });
 
-            // 将当前帧绘制到画布上
-            ctx.drawImage(video, i * frameWidth, 0, frameWidth, frameHeight);
+            // 将当前帧缩放并绘制到画布上
+            ctx.drawImage(
+              video,
+              0, 0, originalFrameWidth, originalFrameHeight, // 源区域
+              i * targetFrameWidth, 0, targetFrameWidth, targetFrameHeight // 目标区域
+            );
           }
 
           // 将画布转换为blob
           canvas.toBlob((blob) => {
             if (blob) {
-              resolve(URL.createObjectURL(blob));
+              resolve({
+                thumbnail: URL.createObjectURL(blob),
+                frameCount,
+                frameWidth: targetFrameWidth
+              });
             } else {
-              resolve(videoUrl);
+              resolve({ thumbnail: videoUrl, frameCount: 1, frameWidth: 1 });
             }
           }, 'image/jpeg', 0.75);
         } catch (err) {
           console.error('Error generating thumbnail:', err);
-          resolve(videoUrl);
+          resolve({ thumbnail: videoUrl, frameCount: 1, frameWidth: 1 });
         }
       });
 
       video.addEventListener('error', () => {
-        resolve(videoUrl); // fallback on error
+        resolve({ thumbnail: videoUrl, frameCount: 1, frameWidth: 1 }); // fallback on error
       });
     });
   };
@@ -89,11 +101,33 @@ export const AssetPanel: React.FC = () => {
           : 'image';
 
       let thumbnail: string | undefined;
+      let thumbnailFrameCount: number | undefined;
+      let thumbnailFrameWidth: number | undefined;
       let waveform: number[] | undefined;
+      let duration: number | undefined;
+
+      // Get duration for video/audio
+      if (type === 'video' || type === 'audio') {
+        try {
+          duration = await new Promise<number>((resolve, reject) => {
+            const media = document.createElement(type === 'video' ? 'video' : 'audio');
+            media.src = url;
+            media.addEventListener('loadedmetadata', () => {
+              resolve(media.duration);
+            });
+            media.addEventListener('error', reject);
+          });
+        } catch (error) {
+          console.error('Error getting duration:', error);
+        }
+      }
 
       // Generate thumbnail for video
       if (type === 'video') {
-        thumbnail = await generateVideoThumbnail(url);
+        const result = await generateVideoThumbnail(url);
+        thumbnail = result.thumbnail;
+        thumbnailFrameCount = result.frameCount;
+        thumbnailFrameWidth = result.frameWidth;
       }
 
       // Generate waveform for audio and video
@@ -110,7 +144,10 @@ export const AssetPanel: React.FC = () => {
         name: file.name,
         type: type as 'video' | 'audio' | 'image',
         src: url,
+        duration,
         thumbnail,
+        thumbnailFrameCount,
+        thumbnailFrameWidth,
         waveform,
         createdAt: Date.now(),
       };
@@ -124,13 +161,11 @@ export const AssetPanel: React.FC = () => {
   };
 
   const handleAssetDragStart = (e: React.DragEvent, asset: Asset) => {
-    console.log('Drag started with asset:', asset);
     currentDraggedAsset = asset; // Store globally
     e.dataTransfer.effectAllowed = 'copy';
     e.dataTransfer.setData('text/plain', asset.id); // Use text/plain for better compatibility
     e.dataTransfer.setData('assetId', asset.id);
     e.dataTransfer.setData('asset', JSON.stringify(asset));
-    console.log('Set assetId:', asset.id);
   };
 
   const handleAddTextToTrack = () => {
@@ -403,6 +438,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: '48px',
     height: '48px',
     objectFit: 'cover',
+    objectPosition: 'left top',
     borderRadius: '4px',
     backgroundColor: '#3d3d3d',
   },

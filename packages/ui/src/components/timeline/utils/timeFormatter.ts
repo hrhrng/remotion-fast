@@ -34,7 +34,10 @@ export function framesToSeconds(frame: number, fps: number): number {
  * @returns 帧数
  */
 export function secondsToFrames(seconds: number, fps: number): number {
-  return Math.round(seconds * fps);
+  // Quantize media time to the timeline frame grid using a conservative rule:
+  // floor to avoid creating an extra (blank) frame due to container overhangs.
+  // Add a tiny epsilon to counter floating rounding noise.
+  return Math.floor(seconds * fps + 1e-6);
 }
 
 /**

@@ -11,6 +11,8 @@ interface TimelinePlayheadProps {
   onSeek: (frame: number) => void;
   onDragStart?: () => void;
   onDragEnd?: () => void;
+  // Horizontal scroll sync from tracks viewport
+  scrollLeft?: number;
 }
 
 export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
@@ -21,6 +23,7 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
   onSeek,
   onDragStart,
   onDragEnd,
+  scrollLeft = 0,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -40,7 +43,7 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
         if (!timelineContainer) return;
 
         const rect = timelineContainer.getBoundingClientRect();
-        const x = moveEvent.clientX - rect.left - timeline.trackLabelWidth;
+        const x = moveEvent.clientX - rect.left - timeline.trackLabelWidth + scrollLeft;
         const frame = Math.max(0, Math.round(x / pixelsPerFrame));
         onSeek(frame);
       };
@@ -62,7 +65,8 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
     <div
       style={{
         position: 'absolute',
-        left: position,
+        // Align with tracks area: add label gutter and subtract scrollLeft
+        left: timeline.trackLabelWidth + position - scrollLeft,
         top: 0,
         bottom: 0,
         width: timeline.playheadWidth,

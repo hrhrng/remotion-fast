@@ -5,8 +5,6 @@ import {
   formatTime,
   frameToPixels,
   pixelsToFrame,
-  getRulerInterval,
-  getSubInterval,
 } from './utils/timeFormatter';
 
 interface TimelineRulerProps {
@@ -15,6 +13,12 @@ interface TimelineRulerProps {
   fps: number;
   onSeek: (frame: number) => void;
   zoom: number;
+  // Horizontal scroll sync from tracks viewport
+  scrollLeft: number;
+  // Visible content width to clamp ruler width
+  viewportWidth?: number;
+  // Limit tick/labels to content end (frames). If omitted, use durationInFrames.
+  contentEndInFrames?: number;
 }
 
 export const TimelineRuler: React.FC<TimelineRulerProps> = ({
@@ -23,34 +27,78 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
   fps,
   onSeek,
   zoom,
+  scrollLeft,
+  viewportWidth,
+  contentEndInFrames,
 }) => {
   const [hoveredFrame, setHoveredFrame] = useState<number | null>(null);
   const [mouseX, setMouseX] = useState<number>(0);
 
-  const mainInterval = getRulerInterval(zoom);
-  const subInterval = getSubInterval(mainInterval);
+  // Layout targets
+  const MIN_LABEL_SPACING_PX = 80; // Prevent label overlap
+  const MIN_SUBTICK_SPACING_PX = 8;
 
-  const totalWidth = frameToPixels(durationInFrames, pixelsPerFrame);
+  // Choose label (major) step in seconds to achieve readable spacing
+  const pxPerSecond = fps * pixelsPerFrame;
+  const labelStepSecondsCandidates = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+  const labelStepSeconds = useMemo(() => {
+    for (const s of labelStepSecondsCandidates) {
+      if (s * pxPerSecond >= MIN_LABEL_SPACING_PX) return s;
+    }
+    return labelStepSecondsCandidates[labelStepSecondsCandidates.length - 1];
+  }, [pxPerSecond]);
 
-  // 生成主刻度
+  const majorStepFrames = Math.max(1, Math.round(labelStepSeconds * fps));
+
+  // Choose minor step in frames (prefer 1/10 ~ 1/5 of major step), but keep spacing readable
+  const minorStepCandidates = useMemo(() => {
+    const base = [1, 2, 3, 5, 10, 15, 30, 60];
+    return base.filter((f) => f < majorStepFrames);
+  }, [majorStepFrames]);
+
+  const minorStepFrames = useMemo(() => {
+    // Ideal is major/10, fallback to the largest candidate that fits spacing
+    const ideal = Math.max(1, Math.round(majorStepFrames / 10));
+    const idealPx = ideal * pixelsPerFrame;
+    if (idealPx >= MIN_SUBTICK_SPACING_PX) return ideal;
+    for (let i = minorStepCandidates.length - 1; i >= 0; i--) {
+      const f = minorStepCandidates[i];
+      if (f * pixelsPerFrame >= MIN_SUBTICK_SPACING_PX) return f;
+    }
+    return 0; // No minor ticks
+  }, [majorStepFrames, pixelsPerFrame, minorStepCandidates]);
+
+  const totalWidth = Math.max(frameToPixels(durationInFrames, pixelsPerFrame), viewportWidth ?? 0);
+
+  // Format label as MM:SS (omit frames for readability)
+  const formatLabelMMSS = (frame: number) => {
+    const totalSeconds = Math.floor(frame / fps);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
+
+  // 生成主刻度（与标签对齐）。刻度生成到内容末尾，不必占满显示宽度。
   const mainTicks = useMemo(() => {
     const ticks: { frame: number; position: number; label: string }[] = [];
-    for (let frame = 0; frame <= durationInFrames; frame += mainInterval) {
+    const endFrame = Math.max(0, contentEndInFrames ?? durationInFrames);
+    for (let frame = 0; frame <= endFrame; frame += majorStepFrames) {
       ticks.push({
         frame,
         position: frameToPixels(frame, pixelsPerFrame),
-        label: formatTime(frame, fps),
+        label: formatLabelMMSS(frame),
       });
     }
     return ticks;
-  }, [durationInFrames, mainInterval, pixelsPerFrame, fps]);
+  }, [durationInFrames, contentEndInFrames, majorStepFrames, pixelsPerFrame, fps]);
 
   // 生成次刻度
   const subTicks = useMemo(() => {
+    if (minorStepFrames <= 0) return [] as { frame: number; position: number }[];
     const ticks: { frame: number; position: number }[] = [];
-    for (let frame = 0; frame <= durationInFrames; frame += subInterval) {
-      // 跳过与主刻度重合的位置
-      if (frame % mainInterval !== 0) {
+    const endFrame = Math.max(0, contentEndInFrames ?? durationInFrames);
+    for (let frame = 0; frame <= endFrame; frame += minorStepFrames) {
+      if (frame % majorStepFrames !== 0) {
         ticks.push({
           frame,
           position: frameToPixels(frame, pixelsPerFrame),
@@ -58,19 +106,22 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
       }
     }
     return ticks;
-  }, [durationInFrames, subInterval, mainInterval, pixelsPerFrame]);
+  }, [durationInFrames, contentEndInFrames, minorStepFrames, majorStepFrames, pixelsPerFrame]);
+
+  // Pixel snapping for crisp 1px SVG strokes
+  const crisp = (x: number) => Math.round(x) + 0.5;
 
   const handleClick = (e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
-    const frame = Math.max(0, Math.min(durationInFrames, pixelsToFrame(x, pixelsPerFrame)));
+    const frame = Math.max(0, Math.min(durationInFrames, pixelsToFrame(x + scrollLeft, pixelsPerFrame)));
     onSeek(frame);
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
-    const frame = Math.max(0, Math.min(durationInFrames, pixelsToFrame(x, pixelsPerFrame)));
+    const frame = Math.max(0, Math.min(durationInFrames, pixelsToFrame(x + scrollLeft, pixelsPerFrame)));
     setHoveredFrame(frame);
     setMouseX(x);
   };
@@ -88,8 +139,8 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
         right: 0,
         height: timeline.rulerHeight,
         background: `linear-gradient(180deg, ${colors.bg.secondary} 0%, ${colors.bg.elevated} 100%)`,
-        borderBottom: `1px solid ${colors.border.default}`,
-        boxShadow: shadows.sm,
+        // Use the track container's top border as the only separator
+        boxShadow: 'none',
         zIndex: zIndex.ruler,
         cursor: 'pointer',
         userSelect: 'none',
@@ -104,17 +155,18 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
         height={timeline.rulerHeight}
         style={{
           position: 'absolute',
-          left: 0,
+          left: -scrollLeft,
           top: 0,
+          willChange: 'transform',
         }}
       >
         {/* 次刻度（细线） */}
         {subTicks.map((tick) => (
           <line
             key={`sub-${tick.frame}`}
-            x1={tick.position}
+            x1={crisp(tick.position)}
             y1={timeline.rulerHeight - 6}
-            x2={tick.position}
+            x2={crisp(tick.position)}
             y2={timeline.rulerHeight}
             stroke={colors.border.default}
             strokeWidth={1}
@@ -125,15 +177,15 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
         {mainTicks.map((tick) => (
           <g key={`main-${tick.frame}`}>
             <line
-              x1={tick.position}
+              x1={crisp(tick.position)}
               y1={timeline.rulerHeight - 10}
-              x2={tick.position}
+              x2={crisp(tick.position)}
               y2={timeline.rulerHeight}
               stroke={colors.text.tertiary}
               strokeWidth={1}
             />
             <text
-              x={tick.position + 4}
+              x={Math.round(tick.position) + 4}
               y={14}
               fill={colors.text.secondary}
               fontSize={typography.fontSize.xs}

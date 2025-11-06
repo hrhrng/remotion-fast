@@ -80,12 +80,26 @@ export const TimelineTrack: React.FC<TimelineTrackProps> = ({
       const item = track.items.find((i) => i.id === itemId);
       if (!item) return;
 
+      // 获取视频/音频素材的最大时长限制（以帧为单位）
+      let maxDurationInFrames: number | undefined;
+      if ((item.type === 'video' || item.type === 'audio') && 'src' in item) {
+        const asset = assets.find((a) => a.src === item.src);
+        if (asset?.duration) {
+          // 将秒转换为帧 (假设 30fps)
+          maxDurationInFrames = Math.floor(asset.duration * 30);
+        }
+      }
+
       if (edge === 'left') {
         // 调整起点和时长
         const newFrom = Math.max(0, item.from + deltaFrames);
         const newDuration = item.durationInFrames + (item.from - newFrom);
 
-        if (newDuration >= 15) {
+        // 检查最小和最大限制
+        const isValidDuration = newDuration >= 15 &&
+          (!maxDurationInFrames || newDuration <= maxDurationInFrames);
+
+        if (isValidDuration) {
           onUpdateItem(itemId, {
             from: newFrom,
             durationInFrames: newDuration,
@@ -93,13 +107,19 @@ export const TimelineTrack: React.FC<TimelineTrackProps> = ({
         }
       } else {
         // 调整时长
-        const newDuration = Math.max(15, item.durationInFrames + deltaFrames);
+        let newDuration = Math.max(15, item.durationInFrames + deltaFrames);
+
+        // 限制最大时长不超过素材实际时长
+        if (maxDurationInFrames && newDuration > maxDurationInFrames) {
+          newDuration = maxDurationInFrames;
+        }
+
         onUpdateItem(itemId, {
           durationInFrames: newDuration,
         });
       }
     },
-    [track.items, onUpdateItem]
+    [track.items, assets, onUpdateItem]
   );
 
   return (

@@ -64,6 +64,8 @@ export type Asset = {
   src: string;
   duration?: number;
   thumbnail?: string;
+  thumbnailFrameCount?: number; // Number of frames in the thumbnail strip
+  thumbnailFrameWidth?: number; // Width of each frame in the thumbnail strip (in pixels)
   waveform?: number[]; // Normalized audio peaks (0-1) for waveform visualization
   createdAt: number;
 };

@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback, Fragment } from 'react';
 import { useEditor } from '@remotion-fast/core';
 import type { Track, Asset, Item } from '@remotion-fast/core';
-import { colors, timeline, spacing, shadows, getItemColor } from './styles';
+import { colors, timeline, spacing, shadows, getItemColor, withOpacity, borderRadius } from './styles';
+import { secondsToFrames } from './utils/timeFormatter';
 import { TimelineItem } from './TimelineItem';
 import { currentDraggedAsset } from '../AssetPanel';
 
@@ -15,6 +16,7 @@ declare global {
 interface TimelineTracksContainerProps {
   durationInFrames: number;
   pixelsPerFrame: number;
+  fps: number;
   selectedTrackId: string | null;
   selectedItemId: string | null;
   assets: Asset[];
@@ -25,6 +27,22 @@ interface TimelineTracksContainerProps {
   onDragOver: (e: React.DragEvent) => void;
   onDrop: (trackId: string, e: React.DragEvent) => void;
   onEmptyDrop: (e: React.DragEvent) => void;
+  onItemDragStart: (e: React.DragEvent, trackId: string, item: Item) => void;
+  onItemDragOver: (e: React.DragEvent, trackId: string) => void;
+  onItemDrop: (e: React.DragEvent, trackId: string) => void;
+  onItemDragEnd: () => void;
+  dragPreview: {
+    itemId: string;
+    item: Item;
+    originalTrackId: string;
+    originalFrom: number;
+    previewTrackId: string;
+    previewFrame: number;
+  } | null;
+  // Horizontal scroll sync – report viewport scrollLeft to parent
+  onScrollXChange?: (scrollLeft: number) => void;
+  // Available viewport content width (without labels), used to clamp min width
+  viewportWidth?: number;
 }
 
 // Store dragged data globally to work around dataTransfer issues
@@ -33,6 +51,7 @@ let globalDragData: { assetId?: string; quickAdd?: string; quickAddType?: string
 export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = ({
   durationInFrames,
   pixelsPerFrame,
+  fps,
   selectedTrackId,
   selectedItemId,
   assets,
@@ -43,6 +62,13 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
   onDragOver,
   onDrop,
   onEmptyDrop,
+  onItemDragStart,
+  onItemDragOver,
+  onItemDrop,
+  onItemDragEnd,
+  dragPreview,
+  onScrollXChange,
+  viewportWidth,
 }) => {
   const { state, dispatch } = useEditor();
   const { tracks } = state;
@@ -50,6 +76,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
   const containerRef = useRef<HTMLDivElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const handleInsertDropRef = useRef<((e: React.DragEvent, position: number) => void) | null>(null);
 
   const [scrollSync, setScrollSync] = useState({ x: 0, y: 0 });
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -61,8 +88,15 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
       const scrollTop = viewportRef.current.scrollTop;
       labelsRef.current.scrollTop = scrollTop;
       setScrollSync(prev => ({ ...prev, y: scrollTop }));
+
+      // Sync horizontal scroll to consumers (ruler, playhead, etc.)
+      const scrollLeft = viewportRef.current.scrollLeft;
+      setScrollSync(prev => ({ ...prev, x: scrollLeft }));
+      onScrollXChange?.(scrollLeft);
     }
-  }, []);
+  }, [onScrollXChange]);
+
+  // no-op
 
   const handleLabelsScroll = useCallback(() => {
     if (labelsRef.current && viewportRef.current) {
@@ -84,28 +118,56 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
       quickAddType: e.dataTransfer.getData('quickAddType'),
       asset: e.dataTransfer.getData('asset'),
     };
-    console.log('Stored global drag data on enter:', globalDragData);
   }, []);
 
   const handleContainerDragLeave = useCallback((e: React.DragEvent) => {
-    // 只有离开整个容器时才隐藏指示器
-    if (e.currentTarget === e.target) {
+    // 检查是否是真正离开容器（触控板可能在这里"drop"）
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const isOutside =
+      e.clientX < rect.left ||
+      e.clientX > rect.right ||
+      e.clientY < rect.top ||
+      e.clientY > rect.bottom;
+
+    if (isOutside) {
+      // 触控板 workaround: 如果有 insertPosition，视为 drop 操作
+      if (insertPosition !== null) {
+        // 执行 drop 逻辑
+        const currentInsertPosition = insertPosition;
+        setIsDraggingOver(false);
+        setInsertPosition(null);
+
+        if (handleInsertDropRef.current) {
+          handleInsertDropRef.current(e, currentInsertPosition);
+        }
+        return;
+      }
+
       setIsDraggingOver(false);
       setInsertPosition(null);
     }
-  }, []);
+  }, [insertPosition]);
+
+  const handleContainerDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); // CRITICAL: Must prevent default to allow drop
+    e.dataTransfer.dropEffect = 'copy'; // CRITICAL: Must match effectAllowed from drag source
+    onDragOver(e); // Call the parent's handler
+  }, [onDragOver]);
 
   const handleContainerDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingOver(false);
 
-    // Don't handle the drop here if we're inserting between tracks
-    // It will be handled by the track's own drop handler
-    if (insertPosition !== null) {
+    const currentInsertPosition = insertPosition;
+    setInsertPosition(null);
+
+    // 如果有插入位置，调用 handleInsertDrop
+    if (currentInsertPosition !== null) {
+      if (handleInsertDropRef.current) {
+        handleInsertDropRef.current(e, currentInsertPosition);
+      }
       return;
     }
-
-    setInsertPosition(null);
 
     // 如果没有轨道，调用空状态的 drop 处理
     if (tracks.length === 0) {
@@ -117,26 +179,22 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
   const detectInsertPosition = useCallback((e: React.DragEvent) => {
     if (!viewportRef.current) return;
 
+    // 如果timeline是空的，总是在位置0插入新轨道
+    if (tracks.length === 0) {
+      setInsertPosition(0);
+      return 0;
+    }
+
     const rect = viewportRef.current.getBoundingClientRect();
     const y = e.clientY - rect.top + viewportRef.current.scrollTop;
     const trackIndex = Math.floor(y / timeline.trackHeight);
     const relativeY = y % timeline.trackHeight;
 
-    console.log('detectInsertPosition:', {
-      y,
-      trackIndex,
-      relativeY,
-      trackHeight: timeline.trackHeight,
-      tracksLength: tracks.length
-    });
-
     // 如果鼠标在轨道边界附近（上下 20px 范围内，增加容错范围）
     if (relativeY < 20 || relativeY > timeline.trackHeight - 20) {
       // 计算插入位置
       const position = relativeY < 20 ? trackIndex : trackIndex + 1;
-      console.log('Near boundary, position would be:', position);
       if (position >= 0 && position <= tracks.length) {
-        console.log('Setting insertPosition to:', position);
         setInsertPosition(position);
         return position;
       }
@@ -148,7 +206,6 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
 
   // 处理轨道间插入
   const handleInsertDrop = useCallback((e: React.DragEvent, position: number) => {
-    console.log('=== handleInsertDrop called! position:', position);
     e.preventDefault();
     e.stopPropagation();
 
@@ -157,24 +214,13 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
     const itemId = e.dataTransfer.getData('itemId');
     const sourceTrackId = e.dataTransfer.getData('trackId');
 
-    console.log('Drop event data transfer info:');
-    console.log('  - dragType:', dragType);
-    console.log('  - itemId:', itemId);
-    console.log('  - sourceTrackId:', sourceTrackId);
-    console.log('  - window.currentDraggedItem:', window.currentDraggedItem);
-    console.log('  - Condition check: dragType === "item"?', dragType === 'item');
-    console.log('  - Condition check: window.currentDraggedItem exists?', !!window.currentDraggedItem);
 
     if (dragType === 'item' || window.currentDraggedItem) {
       // Moving an existing item to a new track
-      console.log('>>> MOVING EXISTING ITEM TO NEW TRACK <<<');
-      console.log('currentDraggedItem:', window.currentDraggedItem);
 
       const itemToMove = window.currentDraggedItem?.item;
       const sourceTrack = window.currentDraggedItem?.trackId || sourceTrackId;
 
-      console.log('  - Item to move:', itemToMove);
-      console.log('  - Source track ID:', sourceTrack);
 
       if (!itemToMove || !sourceTrack) {
         console.error('ERROR: Missing item or source track information');
@@ -183,34 +229,33 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
         return;
       }
 
-      // Create new track with appropriate name based on item type
+      // 立即清除window.currentDraggedItem，防止dragOver继续处理
+      window.currentDraggedItem = null;
+
+      // 找到当前item所在的实际track（可能已经被dragOver移动过）
+      const currentTrack = tracks.find(t => t.items.some(i => i.id === itemToMove.id));
+      const actualSourceTrackId = currentTrack?.id || sourceTrack;
+
+
+      // Create new track with the item already in it
+      // This way we avoid the issue of REMOVE_ITEM auto-deleting empty tracks
       const newTrack = {
         id: `track-${Date.now()}`,
         name: itemToMove.type.charAt(0).toUpperCase() + itemToMove.type.slice(1),
-        items: []
+        items: [itemToMove]  // Start with the item already in the track
       };
 
-      // Insert new track at the specified position
-      console.log('Creating new track for moved item:', newTrack);
+      // Insert new track at the specified position (with item already in it)
       dispatch({
         type: 'INSERT_TRACK',
         payload: { track: newTrack, index: position }
       });
 
-      // Wait for track creation, then move the item
+      // Then remove item from the source track
       setTimeout(() => {
-        // Remove item from source track
-        console.log('Removing item from source track:', sourceTrack);
         dispatch({
           type: 'REMOVE_ITEM',
-          payload: { trackId: sourceTrack, itemId: itemToMove.id }
-        });
-
-        // Add item to new track
-        console.log('Adding item to new track:', newTrack.id);
-        dispatch({
-          type: 'ADD_ITEM',
-          payload: { trackId: newTrack.id, item: itemToMove }
+          payload: { trackId: actualSourceTrackId, itemId: itemToMove.id }
         });
 
         // Select the moved item
@@ -220,7 +265,6 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
       return;
     }
 
-    console.log('>>> NOT AN EXISTING ITEM - CREATING NEW ITEM FROM ASSET <<<');
     // Otherwise, handle creating new items from assets
     // Try to get assetId from multiple sources, fallback to global data
     let assetId = e.dataTransfer.getData('assetId') ||
@@ -230,14 +274,6 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
     const isQuickAdd = (e.dataTransfer.getData('quickAdd') || globalDragData.quickAdd) === 'true';
     const quickAddType = e.dataTransfer.getData('quickAddType') || globalDragData.quickAddType;
     const assetData = e.dataTransfer.getData('asset') || globalDragData.asset;
-
-    console.log('Drop data from event:', {
-      assetId: e.dataTransfer.getData('assetId'),
-      quickAdd: e.dataTransfer.getData('quickAdd'),
-      quickAddType: e.dataTransfer.getData('quickAddType')
-    });
-    console.log('Drop data from global:', globalDragData);
-    console.log('currentDraggedAsset:', currentDraggedAsset);
 
     // If we still don't have assetId, try to get it from currentDraggedAsset
     let finalIsQuickAdd = isQuickAdd;
@@ -251,7 +287,6 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
       }
     }
 
-    console.log('Final drop data:', { finalIsQuickAdd, finalQuickAddType, assetId, assetData });
 
     // 创建新轨道并插入到指定位置
     const itemType = finalIsQuickAdd ? finalQuickAddType :
@@ -263,12 +298,10 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
     };
 
     // 插入轨道到指定位置
-    console.log('Dispatching INSERT_TRACK with:', { track: newTrack, index: position });
     dispatch({
       type: 'INSERT_TRACK',
       payload: { track: newTrack, index: position }
     });
-    console.log('INSERT_TRACK dispatched');
 
     // 添加素材到新轨道
     setTimeout(() => {
@@ -309,7 +342,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
               id: `item-${Date.now()}`,
               type: 'video',
               from: 0,
-              durationInFrames: (asset && asset.duration) || 90,
+              durationInFrames: (asset && asset.duration) ? secondsToFrames(asset.duration, fps) : 90,
               src: asset ? asset.src : '',
               waveform: asset ? asset.waveform : undefined,
             };
@@ -319,7 +352,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
               id: `item-${Date.now()}`,
               type: 'audio',
               from: 0,
-              durationInFrames: asset.duration || 90,
+              durationInFrames: asset.duration ? secondsToFrames(asset.duration, fps) : 90,
               src: asset.src,
               waveform: asset.waveform,
             };
@@ -346,13 +379,21 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
     }, 0);
   }, [assets, dispatch]);
 
+  // 更新 handleInsertDrop 的 ref
+  useEffect(() => {
+    handleInsertDropRef.current = handleInsertDrop;
+  }, [handleInsertDrop]);
+
   // 扩展拖动悬停处理
   const handleTrackAreaDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); // CRITICAL: Must prevent default to allow drop
+    e.dataTransfer.dropEffect = 'copy'; // CRITICAL: Must match effectAllowed from drag source
     onDragOver(e);
     detectInsertPosition(e);
   }, [onDragOver, detectInsertPosition]);
 
-  const totalWidth = durationInFrames * pixelsPerFrame;
+  // Keep content at least as wide as the viewport to avoid empty scroll area on empty timeline
+  const totalWidth = Math.max(durationInFrames * pixelsPerFrame, viewportWidth ?? 0);
 
   return (
     <div
@@ -362,21 +403,21 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
         flex: 1,
         display: 'flex',
         overflow: 'hidden',
-        background: colors.bg.primary,
+        background: isDraggingOver ? colors.bg.hover : colors.bg.primary,
         borderRadius: 4,
         margin: `${spacing.xs}px`,
+        marginTop: 0, // sit flush under ruler to avoid double separator
+        marginLeft: 0, // keep left perfectly aligned with ruler
         boxShadow: shadows.sm,
-        border: `1px solid ${colors.border.default}`,
+        border: isDraggingOver
+          ? `1px solid ${colors.accent.primary}`
+          : `1px solid ${colors.border.default}`,
+        borderLeft: '0', // remove left border to match ruler row (prevents +1px shift)
         position: 'relative',
-        // 拖放时的视觉反馈
-        ...(isDraggingOver && {
-          background: colors.bg.hover,
-          borderColor: colors.accent.primary,
-        }),
       }}
       onDragEnter={handleContainerDragEnter}
       onDragLeave={handleContainerDragLeave}
-      onDragOver={onDragOver}
+      onDragOver={handleContainerDragOver}
       onDrop={handleContainerDrop}
     >
       {/* 左侧标签面板 */}
@@ -477,25 +518,23 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
             minHeight: '100%',
           }}
           onDrop={(e) => {
-            console.log('Container onDrop, insertPosition:', insertPosition);
             // Handle drops when inserting between tracks or at the end
             if (insertPosition !== null) {
-              console.log('Handling insert drop at position:', insertPosition);
               e.preventDefault();
               e.stopPropagation();
               handleInsertDrop(e, insertPosition);
               setInsertPosition(null);
             } else {
-              console.log('No insertPosition, not handling drop');
             }
           }}
           onDragOver={(e) => {
             e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy'; // CRITICAL: Must match effectAllowed from drag source
             detectInsertPosition(e);
           }}
         >
           {tracks.length === 0 ? (
-            // 空状态
+            // 空状态 - 使用 pointerEvents: 'none' 让 drop 事件穿透到父元素
             <div
               style={{
                 height: 200,
@@ -505,6 +544,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                 justifyContent: 'center',
                 color: colors.text.tertiary,
                 gap: spacing.lg,
+                pointerEvents: 'none', // 让拖放事件穿透到父元素
               }}
             >
               <div style={{ fontSize: 48, opacity: 0.3 }}>🎬</div>
@@ -554,20 +594,28 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                   }}
                   onClick={() => onSelectTrack(track.id)}
                   onDragOver={(e) => {
-                    onDragOver(e);
-                    detectInsertPosition(e);
+                    // 检测插入位置
+                    const insertPos = detectInsertPosition(e);
+                    // 只在不是插入位置时才处理item拖动
+                    if (insertPos === null) {
+                      onItemDragOver(e, track.id);
+                    }
                   }}
                   onDrop={(e) => {
-                    console.log(`Track ${index} onDrop, insertPosition:`, insertPosition);
                     // Don't handle drops that are meant for insertion
                     if (insertPosition !== null) {
-                      console.log(`Track ${index} ignoring drop, insertPosition is:`, insertPosition);
                       return;  // Let the container handle it
                     }
 
-                    // Otherwise, add to existing track
-                    console.log(`Track ${index} handling drop to add item`);
-                    onDrop(track.id, e);
+                    // Check if this is an item being dragged
+                    const dragType = e.dataTransfer.getData('dragType');
+                    if (dragType === 'item' && dragPreview) {
+                      // Item drag - call onItemDrop
+                      onItemDrop(e, track.id);
+                    } else {
+                      // Otherwise, add to existing track from asset panel
+                      onDrop(track.id, e);
+                    }
                   }}
                 >
                   {/* 使用 TimelineItem 组件保留所有功能 */}
@@ -583,13 +631,30 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                       onSelect={() => onSelectItem(item.id)}
                       onDelete={() => onDeleteItem(track.id, item.id)}
                       onUpdate={(itemId, updates) => onUpdateItem(track.id, itemId, updates)}
+                      onDragStart={(e) => onItemDragStart(e, track.id, item)}
+                      onDragEnd={onItemDragEnd}
                       onResize={(edge, deltaFrames) => {
+                        // 获取视频/音频素材的最大时长限制（以帧为单位）
+                        let maxDurationInFrames: number | undefined;
+                        if ((item.type === 'video' || item.type === 'audio') && 'src' in item) {
+                          const asset = assets.find((a) => a.src === item.src);
+                          if (asset?.duration) {
+                            // 将秒转换为帧 (按项目 fps)
+                            maxDurationInFrames = Math.floor(asset.duration * fps);
+                          }
+                        }
+
                         const newFrom = edge === 'left'
                           ? Math.max(0, item.from + deltaFrames)
                           : item.from;
-                        const newDuration = edge === 'left'
+                        let newDuration = edge === 'left'
                           ? item.durationInFrames + (item.from - newFrom)
                           : Math.max(15, item.durationInFrames + deltaFrames);
+
+                        // 限制最大时长不超过素材实际时长
+                        if (maxDurationInFrames && newDuration > maxDurationInFrames) {
+                          newDuration = maxDurationInFrames;
+                        }
 
                         if (newDuration >= 15) {
                           onUpdateItem(track.id, item.id, {
@@ -598,8 +663,37 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                           });
                         }
                       }}
+                      // 如果是被拖动的item，让它半透明
+                      style={{
+                        opacity: dragPreview?.itemId === item.id ? 0.3 : 1,
+                      }}
                     />
                   ))}
+
+                  {/* 渲染预览影子（在目标位置） */}
+                  {dragPreview && dragPreview.previewTrackId === track.id && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: dragPreview.previewFrame * pixelsPerFrame,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        width: dragPreview.item.durationInFrames * pixelsPerFrame,
+                        height: '48px', // 和TimelineItem的itemHeight一致
+                        backgroundColor: withOpacity(
+                          getItemColor(
+                            dragPreview.item.type,
+                            dragPreview.item.type === 'solid' ? dragPreview.item.color : undefined
+                          ),
+                          0.4
+                        ),
+                        borderRadius: '4px',
+                        pointerEvents: 'none',
+                        zIndex: 999,
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  )}
                 </div>
 
                 {/* 插入指示器 - 最后一个轨道下方 */}
