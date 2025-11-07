@@ -49,9 +49,19 @@ export const Timeline: React.FC = () => {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
+  // Mount point for labels (left column) when externalized from tracks container
+  const labelsPortalRef = useRef<HTMLDivElement>(null);
+  const [labelsPortalEl, setLabelsPortalEl] = useState<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    // Mount once so TracksContainer receives a stable portal target
+    setLabelsPortalEl(labelsPortalRef.current);
+  }, []);
   // Sync horizontal scroll position of tracks viewport with ruler and playhead
   const [scrollLeft, setScrollLeft] = useState(0);
   const [viewportContentWidth, setViewportContentWidth] = useState(0);
+  // Visual inset to shift right-pane content without changing layout
+  const contentInsetLeftPx = 12;
 
   const pixelsPerFrame = getPixelsPerFrame(zoom);
   // dnd-kit sensors
@@ -106,7 +116,7 @@ export const Timeline: React.FC = () => {
     const containerRect = container.getBoundingClientRect();
     const viewportRect = viewportEl.getBoundingClientRect();
 
-    const leftWithinTracks = leftOnViewport - containerRect.left - timelineStyles.trackLabelWidth;
+    const leftWithinTracks = leftOnViewport - containerRect.left - timelineStyles.trackLabelWidth - contentInsetLeftPx;
     const rawFrame = Math.max(0, Math.floor(leftWithinTracks / pixelsPerFrame));
 
     const snapResult = calculateSnapForItemRange(
@@ -483,7 +493,7 @@ export const Timeline: React.FC = () => {
       }
 
       const rect = containerRef.current.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left - timelineStyles.trackLabelWidth;
+      const mouseX = e.clientX - rect.left - timelineStyles.trackLabelWidth - contentInsetLeftPx;
 
       // 预览框左边缘位置 = 鼠标位置 - 拖动偏移量
       const previewLeftX = mouseX - dragOffset;
@@ -703,42 +713,69 @@ export const Timeline: React.FC = () => {
         onToggleSnap={() => setSnapEnabled(!snapEnabled)}
       />
 
-      {/* 工作区域 - 占据剩余高度 */}
+      {/* 工作区域：两列布局（左：标签列；右：标尺+轨道） */}
       <div
         className="timeline-workspace"
         style={{
           flex: 1,
           display: 'flex',
-          flexDirection: 'column',
+          flexDirection: 'row',
           overflow: 'hidden',
           position: 'relative',
         }}
         ref={workspaceRef}
       >
-        {/* 时间标尺 - 固定高度 */}
+        {/* 左列：上方标尺占位 + 下方标签列表（通过 Portal 注入）*/}
         <div
           style={{
-            height: timelineStyles.rulerHeight,
+            width: timelineStyles.trackLabelWidth,
             flexShrink: 0,
             display: 'flex',
-            backgroundColor: colors.bg.secondary,
-            position: 'sticky',
-            top: 0,
-            zIndex: 15,
+            flexDirection: 'column',
+            borderRight: `1px solid ${colors.border.default}`,
+            background: colors.bg.secondary,
           }}
         >
-          {/* 左侧占位（对齐标签宽度） */}
+          {/* 左侧 ruler 顶部占位 */}
           <div
             style={{
-              width: timelineStyles.trackLabelWidth,
+              height: timelineStyles.rulerHeight,
               flexShrink: 0,
-              backgroundColor: colors.bg.secondary,
-              borderRight: `1px solid ${colors.border.default}`,
+              position: 'sticky',
+              top: 0,
+              zIndex: 30,
+              background: `linear-gradient(180deg, ${colors.bg.secondary} 0%, ${colors.bg.elevated} 100%)`,
+              borderBottom: `1px solid ${colors.border.default}`,
             }}
           />
+          {/* 标签面板挂载点 */}
+          <div ref={labelsPortalRef} style={{ flex: 1, minHeight: 0 }} />
+        </div>
 
-          {/* 标尺内容 */}
-          <div style={{ flex: 1, overflow: 'hidden' }}>
+        {/* 右列：上方标尺 + 下方轨道视口 */}
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            minWidth: 0,
+            position: 'relative',
+            overflow: 'hidden', // clip playhead/ruler overflow to right column
+          }}
+          data-playhead-container
+        >
+          {/* 标尺 */}
+          <div
+            style={{
+              height: timelineStyles.rulerHeight,
+              flexShrink: 0,
+              position: 'sticky',
+              top: 0,
+              zIndex: 15,
+              background: `linear-gradient(180deg, ${colors.bg.secondary} 0%, ${colors.bg.elevated} 100%)`,
+              overflow: 'hidden',
+            }}
+          >
             <TimelineRuler
               durationInFrames={displayDurationInFrames}
               pixelsPerFrame={pixelsPerFrame}
@@ -747,80 +784,63 @@ export const Timeline: React.FC = () => {
               zoom={zoom}
               scrollLeft={scrollLeft}
               viewportWidth={viewportContentWidth}
+              leftOffset={contentInsetLeftPx}
+            />
+          </div>
+
+          {/* 轨道容器 - dnd-kit 包裹，仅用于 item 移动；资产拖入仍走原生 */}
+          <DndContext sensors={sensors} onDragStart={onDndItemStart} onDragMove={onDndItemMove} onDragOver={onDndItemOver} onDragEnd={onDndItemEnd}>
+            <TimelineTracksContainer
+              durationInFrames={displayDurationInFrames}
+              pixelsPerFrame={pixelsPerFrame}
+              fps={fps}
+              snapEnabled={snapEnabled}
+              selectedTrackId={selectedTrackId}
+              selectedItemId={selectedItemId}
+              assets={assets}
+              onSelectTrack={handleSelectTrack}
+              onSelectItem={handleSelectItem}
+              onDeleteItem={handleDeleteItem}
+              onUpdateItem={handleUpdateItem}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              onEmptyDrop={handleTimelineDrop}
+              // 关闭原生 item 拖拽通道
+              onItemDragStart={() => {}}
+              onItemDragOver={() => {}}
+              onItemDrop={() => {}}
+              onItemDragEnd={handleItemDragEnd}
+              dragPreview={dragPreview}
+              onScrollXChange={setScrollLeft}
+              viewportWidth={viewportContentWidth}
+              labelsPortal={labelsPortalEl}
+              contentInsetLeftPx={contentInsetLeftPx}
+            />
+          </DndContext>
+
+          {/* 播放头 - 仅覆盖右侧 */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              pointerEvents: 'none',
+              zIndex: 20,
+            }}
+          >
+            <TimelinePlayhead
+              currentFrame={currentFrame}
+              pixelsPerFrame={pixelsPerFrame}
+              fps={fps}
+              timelineHeight={tracks.length * timelineStyles.trackHeight + timelineStyles.rulerHeight}
+              onSeek={handleSeek}
+              scrollLeft={scrollLeft}
+              leftOffset={contentInsetLeftPx}
             />
           </div>
         </div>
-
-        {/* 轨道容器 - dnd-kit 包裹，仅用于 item 移动；资产拖入仍走原生 */}
-        <DndContext sensors={sensors} onDragStart={onDndItemStart} onDragMove={onDndItemMove} onDragOver={onDndItemOver} onDragEnd={onDndItemEnd}>
-          <TimelineTracksContainer
-            durationInFrames={displayDurationInFrames}
-            pixelsPerFrame={pixelsPerFrame}
-            fps={fps}
-            snapEnabled={snapEnabled}
-            selectedTrackId={selectedTrackId}
-            selectedItemId={selectedItemId}
-            assets={assets}
-            onSelectTrack={handleSelectTrack}
-            onSelectItem={handleSelectItem}
-            onDeleteItem={handleDeleteItem}
-            onUpdateItem={handleUpdateItem}
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
-            onEmptyDrop={handleTimelineDrop}
-            // 关闭原生 item 拖拽通道
-            onItemDragStart={() => {}}
-            onItemDragOver={() => {}}
-            onItemDrop={() => {}}
-            onItemDragEnd={handleItemDragEnd}
-            dragPreview={dragPreview}
-            onScrollXChange={setScrollLeft}
-            viewportWidth={viewportContentWidth}
-          />
-        </DndContext>
-
-        {/* 播放头 - 覆盖层 */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            pointerEvents: 'none',
-            zIndex: 20,
-          }}
-      >
-          <TimelinePlayhead
-            currentFrame={currentFrame}
-            pixelsPerFrame={pixelsPerFrame}
-            fps={fps}
-            timelineHeight={tracks.length * timelineStyles.trackHeight + timelineStyles.rulerHeight}
-            onSeek={handleSeek}
-            scrollLeft={scrollLeft}
-          />
-        </div>
-<<<<<<< ours
-<<<<<<< ours
-=======
-
-        {/* 左侧 ruler 遮罩（覆盖 label+gap 对应的上方区域，保证三角也被遮住） */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: timelineStyles.trackLabelWidth + (timelineStyles as any).labelViewportGap,
-            height: timelineStyles.rulerHeight,
-            background: `linear-gradient(180deg, ${colors.bg.secondary} 0%, ${colors.bg.elevated} 100%)`,
-            borderRight: `1px solid ${colors.border.default}`,
-            pointerEvents: 'none',
-            zIndex: 25,
-          }}
-        />
->>>>>>> theirs
-=======
->>>>>>> theirs
       </div>
     </div>
   );

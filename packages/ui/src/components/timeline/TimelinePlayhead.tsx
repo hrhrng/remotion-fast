@@ -13,6 +13,11 @@ interface TimelinePlayheadProps {
   onDragEnd?: () => void;
   // Horizontal scroll sync from tracks viewport
   scrollLeft?: number;
+  // Additional left offset in pixels to account for when the
+  // playhead is rendered relative to a container that does not start at
+  // the very left edge of the overall timeline (e.g., when placing the
+  // playhead only inside the right pane). Default 0.
+  leftOffset?: number;
 }
 
 export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
@@ -24,14 +29,14 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
   onDragStart,
   onDragEnd,
   scrollLeft = 0,
+  leftOffset = 0,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
   const position = frameToPixels(currentFrame, pixelsPerFrame);
-  // 把 gap 也纳入坐标系：播放头相对“内容区”的 x = labelWidth + gap + position - scrollLeft
-  const gap = (timeline as any).labelViewportGap ?? 0;
-  const centerX = timeline.trackLabelWidth + gap + position - scrollLeft + timeline.playheadWidth / 2;
+  // 播放头中心轴（不再加半线宽，线和手柄都围绕它对齐）
+  const centerX = leftOffset + position - scrollLeft;
   const lineLeft = centerX - timeline.playheadWidth / 2;
   const triangleLeft = centerX - timeline.playheadTriangleSize / 2;
 
@@ -44,11 +49,17 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
       onDragStart?.();
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
-        const timelineContainer = (e.target as HTMLElement).closest('[data-timeline-container]');
+        // Prefer anchoring to the right content pane to include left inset
+        const rightPane = document.querySelector('[data-playhead-container]') as HTMLElement | null;
+        const timelineContainer = rightPane || (document.querySelector('[data-timeline-container]') as HTMLElement | null);
         if (!timelineContainer) return;
 
         const rect = timelineContainer.getBoundingClientRect();
-        const x = moveEvent.clientX - rect.left - timeline.trackLabelWidth + scrollLeft;
+        const xFromContainer = moveEvent.clientX - rect.left;
+        const xRelativeToContent = rightPane
+          ? xFromContainer - leftOffset
+          : xFromContainer - timeline.trackLabelWidth - leftOffset;
+        const x = xRelativeToContent + scrollLeft;
         const frame = Math.max(0, Math.round(x / pixelsPerFrame));
         onSeek(frame);
       };
@@ -63,7 +74,7 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     },
-    [pixelsPerFrame, onSeek, onDragStart, onDragEnd]
+    [pixelsPerFrame, onSeek, onDragStart, onDragEnd, leftOffset]
   );
 
   return (

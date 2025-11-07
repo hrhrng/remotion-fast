@@ -19,6 +19,8 @@ interface TimelineRulerProps {
   viewportWidth?: number;
   // Limit tick/labels to content end (frames). If omitted, use durationInFrames.
   contentEndInFrames?: number;
+  // Left inset to visually shift ruler content right without changing layout
+  leftOffset?: number;
 }
 
 // Timeline ruler renders scalable ticks/labels with pixel-driven spacing.
@@ -35,6 +37,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
   scrollLeft,
   viewportWidth,
   contentEndInFrames,
+  leftOffset = 0,
 }) => {
   const [hoveredFrame, setHoveredFrame] = useState<number | null>(null);
   const [mouseX, setMouseX] = useState<number>(0);
@@ -119,14 +122,14 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
   const handleClick = (e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
-    const frame = Math.max(0, Math.min(durationInFrames, pixelsToFrame(x + scrollLeft, pixelsPerFrame)));
+    const frame = Math.max(0, Math.min(durationInFrames, pixelsToFrame(x + scrollLeft - leftOffset, pixelsPerFrame)));
     onSeek(frame);
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
-    const frame = Math.max(0, Math.min(durationInFrames, pixelsToFrame(x + scrollLeft, pixelsPerFrame)));
+    const frame = Math.max(0, Math.min(durationInFrames, pixelsToFrame(x + scrollLeft - leftOffset, pixelsPerFrame)));
     setHoveredFrame(frame);
     setMouseX(x);
   };
@@ -160,7 +163,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
         height={timeline.rulerHeight}
         style={{
           position: 'absolute',
-          left: -scrollLeft,
+          left: leftOffset - scrollLeft,
           top: 0,
           willChange: 'transform',
         }}

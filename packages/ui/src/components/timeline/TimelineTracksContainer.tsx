@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, Fragment } from 'react';
+import { createPortal } from 'react-dom';
 import { useEditor } from '@remotion-fast/core';
 import type { Track, Asset, Item } from '@remotion-fast/core';
 import { colors, timeline, spacing, shadows, getItemColor, withOpacity, borderRadius } from './styles';
@@ -49,6 +50,10 @@ interface TimelineTracksContainerProps {
   onScrollXChange?: (scrollLeft: number) => void;
   // Available viewport content width (without labels), used to clamp min width
   viewportWidth?: number;
+  // If provided, render labels panel into this element via portal
+  labelsPortal?: HTMLElement | null;
+  // Visual left inset for right content (px). Applied as padding on the tracks viewport.
+  contentInsetLeftPx?: number;
 }
 
 // Store dragged data globally to work around dataTransfer issues
@@ -76,6 +81,8 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
   dragPreview,
   onScrollXChange,
   viewportWidth,
+  labelsPortal,
+  contentInsetLeftPx,
 }) => {
   const { state, dispatch } = useEditor();
   const { tracks } = state;
@@ -425,7 +432,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
   // Keep content at least as wide as the viewport to avoid empty scroll area on empty timeline
   const totalWidth = Math.max(durationInFrames * pixelsPerFrame, viewportWidth ?? 0);
 
-  return (
+  const content = (
     <div
       ref={containerRef}
       className="timeline-tracks-container"
@@ -451,85 +458,83 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
       onDragOver={handleContainerDragOver}
       onDrop={handleContainerDrop}
     >
-      {/* 左侧标签面板 */}
-      <div
-        ref={labelsRef}
-        className="track-labels-panel"
-        style={{
-          width: timeline.trackLabelWidth,
-          flexShrink: 0,
-          background: colors.bg.secondary,
-          borderRight: `1px solid ${colors.border.default}`,
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          position: 'sticky',
-          left: 0,
-          zIndex: 10,
-          // Reserve space equal to the horizontal scrollbar in the tracks viewport
-          // so the last row aligns when scrolled to bottom (esp. on Windows).
-          paddingBottom: hScrollbar,
-          // 隐藏滚动条但保持可滚动
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
-        }}
-        onScroll={handleLabelsScroll}
-      >
-        <style>{`
-          .track-labels-panel::-webkit-scrollbar {
-            display: none;
-          }
-        `}</style>
+      {/* 左侧标签面板（若提供 labelsPortal 则不内联渲染） */}
+      {!labelsPortal && (
+        <div
+          ref={labelsRef}
+          className="track-labels-panel"
+          style={{
+            width: timeline.trackLabelWidth,
+            flexShrink: 0,
+            background: colors.bg.secondary,
+            borderRight: `1px solid ${colors.border.default}`,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            position: 'sticky',
+            left: 0,
+            zIndex: 30,
+            // Reserve space equal to the horizontal scrollbar in the tracks viewport
+            // so the last row aligns when scrolled to bottom (esp. on Windows).
+            paddingBottom: hScrollbar,
+            // 隐藏滚动条但保持可滚动
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+          }}
+          onScroll={handleLabelsScroll}
+        >
+          <style>{`
+            .track-labels-panel::-webkit-scrollbar { display: none; }
+          `}</style>
 
-        {tracks.length === 0 ? (
-          // 空状态标签
-          <div
-            style={{
-              height: 200,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: colors.text.tertiary,
-              fontSize: 12,
-              padding: spacing.md,
-              textAlign: 'center',
-            }}
-          >
-            轨道标签
-          </div>
-        ) : (
-          // 轨道标签（这部分会在后续拆分到独立组件）
-          tracks.map((track) => (
+          {tracks.length === 0 ? (
             <div
-              key={track.id}
               style={{
-                height: timeline.trackHeight,
-                borderBottom: `1px solid ${colors.border.default}`,
-                padding: `${spacing.md}px`,
+                height: 200,
                 display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                cursor: 'pointer',
-                background: selectedTrackId === track.id ? colors.bg.selected : 'transparent',
-                transition: 'background-color 0.15s ease',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: colors.text.tertiary,
+                fontSize: 12,
+                padding: spacing.md,
+                textAlign: 'center',
               }}
-              onClick={() => onSelectTrack(track.id)}
             >
-              <div
-                style={{
-                  color: colors.text.primary,
-                  fontSize: 13,
-                  fontWeight: 500,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {track.name}
-              </div>
+              轨道标签
             </div>
-          ))
-        )}
-      </div>
+          ) : (
+            tracks.map((track) => (
+              <div
+                key={track.id}
+                style={{
+                  height: timeline.trackHeight,
+                  borderBottom: `1px solid ${colors.border.default}`,
+                  padding: `${spacing.md}px`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  background: selectedTrackId === track.id ? colors.bg.selected : 'transparent',
+                  transition: 'background-color 0.15s ease',
+                }}
+                onClick={() => onSelectTrack(track.id)}
+              >
+                <div
+                  style={{
+                    color: colors.text.primary,
+                    fontSize: 13,
+                    fontWeight: 500,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {track.name}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       {/* 右侧轨道视口 */}
       <div
@@ -541,6 +546,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
           overflowY: 'auto',
           position: 'relative',
           minWidth: 0,
+          paddingLeft: contentInsetLeftPx ?? 0,
         }}
         onScroll={handleViewportScroll}
         onDragOver={handleTrackAreaDragOver}
@@ -823,4 +829,88 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
       )}
     </div>
   );
+
+  // Optional: Render labels panel externally using a portal
+  if (labelsPortal) {
+    const labelsNode = (
+      <div
+        ref={labelsRef}
+        className="track-labels-panel"
+        style={{
+          width: timeline.trackLabelWidth,
+          flexShrink: 0,
+          background: colors.bg.secondary,
+          borderRight: `1px solid ${colors.border.default}`,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          position: 'sticky',
+          left: 0,
+          zIndex: 30,
+          paddingBottom: hScrollbar,
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+          height: '100%',
+        }}
+        onScroll={handleLabelsScroll}
+      >
+        <style>{`.track-labels-panel::-webkit-scrollbar{display:none;}`}</style>
+        {tracks.length === 0 ? (
+          <div
+            style={{
+              height: 200,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: colors.text.tertiary,
+              fontSize: 12,
+              padding: spacing.md,
+              textAlign: 'center',
+            }}
+          >
+            轨道标签
+          </div>
+        ) : (
+          tracks.map((track) => (
+            <div
+              key={track.id}
+              style={{
+                height: timeline.trackHeight,
+                borderBottom: `1px solid ${colors.border.default}`,
+                padding: `${spacing.md}px`,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                cursor: 'pointer',
+                background: selectedTrackId === track.id ? colors.bg.selected : 'transparent',
+                transition: 'background-color 0.15s ease',
+              }}
+              onClick={() => onSelectTrack(track.id)}
+            >
+              <div
+                style={{
+                  color: colors.text.primary,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {track.name}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    );
+
+    return (
+      <>
+        {createPortal(labelsNode, labelsPortal)}
+        {content}
+      </>
+    );
+  }
+
+  return content;
 };
