@@ -277,13 +277,30 @@ export function buildPreview(
       insertIndex = 0;
     }
   } else if (midOverlapK != null) {
-    // Case E: middle zone overlap -> only create when extreme or non-adjacent
+    // Case E: middle zone overlap
+    // Previous behavior: Only create when extreme or non-adjacent; adjacent boundaries were blocked.
+    // New rule: If the source track contains only the dragged item, still block insertion
+    // between the source and its adjacent track(s). If the source track has other items
+    // besides the dragged one, allow inserting a new track even at adjacent boundaries.
     const extreme = midOverlapK === 0 || midOverlapK === args.tracks.length;
     const nonAdjacent = midOverlapK < srcIdx || midOverlapK > srcIdx + 1;
+
     if (extreme || nonAdjacent) {
       willCreateNewTrack = true;
       insertIndex = midOverlapK;
-    } // else: adjacent middle overlap -> treat as same-track (no-op)
+    } else {
+      // Adjacent boundary: Decide based on whether source track has other items remaining
+      const srcTrack = args.tracks.find((t) => t.id === args.originalTrackId);
+      const remainingCount = srcTrack
+        ? srcTrack.items.filter((i) => i.id !== args.item.id).length
+        : 0;
+      if (remainingCount > 0) {
+        // There are other items in the source track; allow inserting a new track here
+        willCreateNewTrack = true;
+        insertIndex = midOverlapK;
+      }
+      // else: source track would become empty -> do not create (treat as same-track/no-op)
+    }
   }
 
   const snapPref = preferItemEdgeSnap(

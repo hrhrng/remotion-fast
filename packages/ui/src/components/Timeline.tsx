@@ -1,5 +1,18 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { DndContext, MouseSensor, TouchSensor, KeyboardSensor, useSensor, useSensors, DragStartEvent, DragOverEvent, DragEndEvent, DragMoveEvent } from '@dnd-kit/core';
+import {
+  DndContext,
+  DragOverlay,
+  MouseSensor,
+  TouchSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  DragStartEvent,
+  DragOverEvent,
+  DragEndEvent,
+  DragMoveEvent,
+} from '@dnd-kit/core';
+import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { useEditor } from '@remotion-fast/core';
 import type { Item } from '@remotion-fast/core';
 import { TimelineHeader } from './timeline/TimelineHeader';
@@ -543,11 +556,17 @@ export const Timeline: React.FC = () => {
         return;
       }
 
+      // 获取轨道视口元素以读取滚动偏移
+      const viewportEl = document.querySelector('.tracks-viewport') as HTMLDivElement | null;
+      if (!viewportEl) {
+        return;
+      }
+
       const rect = containerRef.current.getBoundingClientRect();
       const mouseX = e.clientX - rect.left - timelineStyles.trackLabelWidth - contentInsetLeftPx;
 
-      // 预览框左边缘位置 = 鼠标位置 - 拖动偏移量
-      const previewLeftX = mouseX - dragOffset;
+      // 预览框左边缘位置 = 鼠标位置 - 拖动偏移量 + 水平滚动偏移
+      const previewLeftX = mouseX - dragOffset + viewportEl.scrollLeft;
       const rawFrame = Math.max(0, Math.floor(previewLeftX / pixelsPerFrame));
 
       // 计算吸附 - Shift键禁用吸附
@@ -643,10 +662,12 @@ export const Timeline: React.FC = () => {
       const quickAddType = e.dataTransfer.getData('quickAddType');
       const assetId = e.dataTransfer.getData('assetId');
 
+      // 获取轨道视口元素以读取滚动偏移
+      const viewportEl = document.querySelector('.tracks-viewport') as HTMLDivElement | null;
 
-      // 计算放置位置
+      // 计算放置位置 - 需要考虑滚动偏移
       const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left;
+      const x = e.clientX - rect.left + (viewportEl?.scrollLeft || 0);
       const rawFrame = pixelsToFrame(x, pixelsPerFrame);
 
       // 应用吸附
@@ -840,7 +861,15 @@ export const Timeline: React.FC = () => {
           </div>
 
           {/* 轨道容器 - dnd-kit 包裹，仅用于 item 移动；资产拖入仍走原生 */}
-          <DndContext sensors={sensors} onDragStart={onDndItemStart} onDragMove={onDndItemMove} onDragOver={onDndItemOver} onDragEnd={onDndItemEnd}>
+          <DndContext
+            sensors={sensors}
+            modifiers={[restrictToFirstScrollableAncestor, restrictToVerticalAxis]}
+            onDragStart={onDndItemStart}
+            onDragMove={onDndItemMove}
+            onDragOver={onDndItemOver}
+            onDragEnd={onDndItemEnd}
+            autoScroll={false}
+          >
             <TimelineTracksContainer
               durationInFrames={displayDurationInFrames}
               pixelsPerFrame={pixelsPerFrame}
@@ -868,6 +897,46 @@ export const Timeline: React.FC = () => {
               contentInsetLeftPx={contentInsetLeftPx}
               externalInsertPosition={insertPosition}
             />
+
+            {/* DragOverlay - 渲染到 portal，不在滚动容器内 */}
+            <DragOverlay
+              dropAnimation={null}
+              style={{
+                cursor: 'grabbing',
+              }}
+            >
+              {draggedItem ? (
+                <div
+                  style={{
+                    width: draggedItem.item.durationInFrames * pixelsPerFrame,
+                    height: 60,
+                    backgroundColor: (() => {
+                      switch (draggedItem.item.type) {
+                        case 'video': return '#2196F3';
+                        case 'audio': return '#FF9800';
+                        case 'image': return '#9C27B0';
+                        case 'text': return '#4CAF50';
+                        case 'solid': return draggedItem.item.color || '#666666';
+                        default: return '#666666';
+                      }
+                    })(),
+                    border: '2px solid rgba(255, 255, 255, 0.5)',
+                    borderRadius: 4,
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'white',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    pointerEvents: 'none',
+                    opacity: 0.9,
+                  }}
+                >
+                  {draggedItem.item.type}
+                </div>
+              ) : null}
+            </DragOverlay>
           </DndContext>
 
           {/* 播放头 - 仅覆盖右侧 */}
