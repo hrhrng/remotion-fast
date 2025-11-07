@@ -173,7 +173,7 @@ export function resolveNonOverlapInTrack(
 export function buildPreview(
   args: {
     leftWithinTracksPx: number;
-    itemTopY: number;
+    itemTopY: number; // Already adjusted with scrollTop in caller
     itemHeightPx: number;
     prevItemTopY?: number;
     pixelsPerFrame: number;

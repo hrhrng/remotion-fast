@@ -1,11 +1,25 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { DndContext, MouseSensor, TouchSensor, KeyboardSensor, useSensor, useSensors, DragStartEvent, DragOverEvent, DragEndEvent, DragMoveEvent } from '@dnd-kit/core';
+import {
+  DndContext,
+  DragOverlay,
+  MouseSensor,
+  TouchSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  DragStartEvent,
+  DragOverEvent,
+  DragEndEvent,
+  DragMoveEvent,
+} from '@dnd-kit/core';
+import { restrictToWindowEdges } from '@dnd-kit/modifiers';
 import { useEditor } from '@remotion-fast/core';
 import type { Item } from '@remotion-fast/core';
 import { TimelineHeader } from './timeline/TimelineHeader';
 import { TimelineRuler } from './timeline/TimelineRuler';
 import { TimelineTracksContainer } from './timeline/TimelineTracksContainer';
 import { TimelinePlayhead } from './timeline/TimelinePlayhead';
+import { TimelineItem } from './timeline/TimelineItem';
 import { useKeyboardShortcuts } from './timeline/hooks/useKeyboardShortcuts';
 import { colors, timeline as timelineStyles, typography } from './timeline/styles';
 import { getPixelsPerFrame, pixelsToFrame, frameToPixels, secondsToFrames } from './timeline/utils/timeFormatter';
@@ -64,6 +78,7 @@ export const Timeline: React.FC = () => {
     // Mount once so TracksContainer receives a stable portal target
     setLabelsPortalEl(labelsPortalRef.current);
   }, []);
+  
   // Sync horizontal scroll position of tracks viewport with ruler and playhead
   const [scrollLeft, setScrollLeft] = useState(0);
   const [viewportContentWidth, setViewportContentWidth] = useState(0);
@@ -124,19 +139,9 @@ export const Timeline: React.FC = () => {
     const containerRect = container.getBoundingClientRect();
     const viewportRect = viewportEl.getBoundingClientRect();
     const leftWithinTracks = leftOnViewport - containerRect.left - timelineStyles.trackLabelWidth - contentInsetLeftPx + viewportEl.scrollLeft;
-    // Use content root top as origin so that track boundaries are exact multiples of trackHeight
-    const contentRoot = (viewportEl.firstElementChild as HTMLElement | null);
-    const contentTop = contentRoot ? contentRoot.getBoundingClientRect().top : viewportRect.top;
-    // Prefer actual dragged element top in viewport if available
-    let itemTopViewport = topOnViewport;
-    try {
-      const currentEl = document.querySelector(`[data-dnd-id="item-${draggedItem.item.id}"]`) as HTMLElement | null;
-      if (currentEl) {
-        const r = currentEl.getBoundingClientRect();
-        if (Number.isFinite(r.top)) itemTopViewport = r.top;
-      }
-    } catch { /* ignore */ }
-    const topY = itemTopViewport - contentTop + (viewportEl.scrollTop || 0);
+    // Use DragOverlay position relative to viewport, then add scrollTop to get absolute position in content
+    // (viewport position is visual, we need absolute position in the entire scrollable content)
+    const topY = (topOnViewport - viewportRect.top) + viewportEl.scrollTop;
 
     const insertThresholdPx = Math.min(12, Math.floor(timelineStyles.trackHeight * 0.15));
     // Debug: log decision landmarks relative to source track boundaries
@@ -228,6 +233,15 @@ export const Timeline: React.FC = () => {
       tracks,
       originalTrackId
     );
+    
+    console.log('[DND] Drop action:', drop.type, {
+      originalTrackId,
+      targetTrackId: 'targetTrackId' in drop ? drop.targetTrackId : 'N/A',
+      frame: drop.frame,
+      tracksCount: tracks.length,
+      itemsInOriginal: tracks.find(t => t.id === originalTrackId)?.items.length,
+      itemsInTarget: 'targetTrackId' in drop ? tracks.find(t => t.id === drop.targetTrackId)?.items.length : 'N/A',
+    });
 
     if (drop.type === 'create-track') {
       const newTrack = {
@@ -243,8 +257,17 @@ export const Timeline: React.FC = () => {
         payload: { trackId: drop.targetTrackId, itemId: item.id, updates: { from: drop.frame } },
       });
     } else if (drop.type === 'move-to-track') {
-      dispatch({ type: 'REMOVE_ITEM', payload: { trackId: originalTrackId, itemId: item.id } });
-      dispatch({ type: 'ADD_ITEM', payload: { trackId: drop.targetTrackId, item: { ...item, from: drop.frame } } });
+      // 如果目标track和源track相同，当作同track移动处理
+      if (drop.targetTrackId === originalTrackId) {
+        dispatch({
+          type: 'UPDATE_ITEM',
+          payload: { trackId: drop.targetTrackId, itemId: item.id, updates: { from: drop.frame } },
+        });
+      } else {
+        const updatedItem = { ...item, from: drop.frame };
+        dispatch({ type: 'ADD_ITEM', payload: { trackId: drop.targetTrackId, item: updatedItem } });
+        dispatch({ type: 'REMOVE_ITEM', payload: { trackId: originalTrackId, itemId: item.id } });
+      }
     }
 
     dispatch({ type: 'SELECT_ITEM', payload: item.id });
@@ -629,7 +652,7 @@ export const Timeline: React.FC = () => {
   }, []);
 
   const handleDrop = useCallback(
-    (trackId: string) => (e: React.DragEvent) => {
+    (trackId: string, e: React.DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
 
@@ -840,7 +863,19 @@ export const Timeline: React.FC = () => {
           </div>
 
           {/* 轨道容器 - dnd-kit 包裹，仅用于 item 移动；资产拖入仍走原生 */}
-          <DndContext sensors={sensors} onDragStart={onDndItemStart} onDragMove={onDndItemMove} onDragOver={onDndItemOver} onDragEnd={onDndItemEnd}>
+          <DndContext
+            sensors={sensors}
+            modifiers={[restrictToWindowEdges]}
+            onDragStart={onDndItemStart}
+            onDragMove={onDndItemMove}
+            onDragOver={onDndItemOver}
+            onDragEnd={onDndItemEnd}
+            autoScroll={{
+              enabled: true,
+              threshold: { x: 0.2, y: 0.2 },
+              acceleration: 10,
+            }}
+          >
             <TimelineTracksContainer
               durationInFrames={displayDurationInFrames}
               pixelsPerFrame={pixelsPerFrame}
@@ -868,6 +903,28 @@ export const Timeline: React.FC = () => {
               contentInsetLeftPx={contentInsetLeftPx}
               externalInsertPosition={insertPosition}
             />
+            
+            <DragOverlay dropAnimation={null}>
+              {draggedItem ? (
+                <TimelineItem
+                  item={draggedItem.item}
+                  trackId={draggedItem.trackId}
+                  track={tracks.find(t => t.id === draggedItem.trackId) || tracks[0]}
+                  pixelsPerFrame={pixelsPerFrame}
+                  isSelected={false}
+                  assets={assets}
+                  onSelect={() => {}}
+                  onDelete={() => {}}
+                  onUpdate={() => {}}
+                  isDragOverlay={true}
+                  style={{
+                    cursor: 'grabbing',
+                    opacity: 0.95,
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                  }}
+                />
+              ) : null}
+            </DragOverlay>
           </DndContext>
 
           {/* 播放头 - 仅覆盖右侧 */}

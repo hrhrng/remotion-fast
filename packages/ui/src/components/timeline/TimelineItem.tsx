@@ -45,6 +45,8 @@ interface TimelineItemProps {
   onResize?: (edge: 'left' | 'right', deltaFrames: number) => void;
   onResizeEnd?: () => void;
   style?: CSSProperties;
+  // DragOverlay mode: disable positioning, let DragOverlay handle it
+  isDragOverlay?: boolean;
 }
 
 export const TimelineItem: React.FC<TimelineItemProps> = ({
@@ -63,6 +65,7 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
   onResize,
   onResizeEnd,
   style: customStyle,
+  isDragOverlay = false,
 }) => {
   const { state } = useEditor();
   const [isHovered, setIsHovered] = useState(false);
@@ -680,7 +683,8 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
   };
 
   // dnd-kit draggable (overlay-only integration; does not alter static layout)
-  const {attributes, listeners, setNodeRef, isDragging, transform} = useDraggable({
+  // DragOverlay中的item不需要draggable
+  const draggableHook = useDraggable({
     id: `item-${item.id}`,
     data: {
       item,
@@ -688,18 +692,12 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
       from: item.from,
       durationInFrames: item.durationInFrames,
     },
+    disabled: isDragOverlay, // DragOverlay中禁用draggable
   });
-
-  // Debug: log dragging state changes
-  useEffect(() => {
-    if (isDragging) {
-      // eslint-disable-next-line no-console
-      console.log('[DND] start dragging item', item.id, { trackId, from: item.from, durationInFrames: item.durationInFrames });
-    } else {
-      // eslint-disable-next-line no-console
-      console.log('[DND] stop dragging item', item.id);
-    }
-  }, [isDragging]);
+  
+  const {attributes, listeners, setNodeRef, isDragging, transform} = isDragOverlay 
+    ? { attributes: {}, listeners: {}, setNodeRef: () => {}, isDragging: false, transform: null }
+    : draggableHook;
 
   // Decoupled renderers: first enable for image/text, others keep existing path
   const useNewRenderer = item.type === 'image' || item.type === 'text';
@@ -713,21 +711,17 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
       {...listeners}
       {...attributes}
       data-dnd-id={`item-${item.id}`}
-      onPointerDown={(e) => {
-        // eslint-disable-next-line no-console
-        console.log('[DND] pointer down on item', item.id, { x: e.clientX, y: e.clientY, target: (e.target as HTMLElement)?.tagName });
-      }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={handleClick}
       onDoubleClick={handleTextEdit}
       style={{
-        position: 'absolute',
-        left: frameToPixels(item.from, pixelsPerFrame),
+        position: isDragOverlay ? undefined : 'absolute',
+        left: isDragOverlay ? undefined : frameToPixels(item.from, pixelsPerFrame),
         width: width,
         height: `${itemHeight}px`,
-        top: '50%',
-        transform: `${transform ? DndCSS.Transform.toString(transform) : ''} translateY(-50%)`,
+        top: isDragOverlay ? undefined : '50%',
+        transform: isDragOverlay ? undefined : 'translateY(-50%)',
         backgroundColor: getColor(),
         borderRadius: '4px',
         border: isSelected
@@ -741,10 +735,8 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
         backgroundSize: useNewRenderer ? 'cover' : (item.type === 'image' ? 'contain' : (isDynamicReady ? 'auto 100%' : 'cover')),
         backgroundPosition: 'left top',
         backgroundRepeat: 'no-repeat',
-        opacity: (track.hidden ? 0.3 : 1),
+        opacity: isDragging ? 0 : (track.hidden ? 0.3 : 1),
         outline: isDragging ? '1px dashed rgba(0, 153, 255, 0.8)' : 'none',
-        zIndex: isDragging ? 1000 : undefined,
-        willChange: isDragging ? 'transform' : undefined,
         ...customStyle, // 应用自定义样式（可以覆盖默认样式，如opacity）
       }}
     >
