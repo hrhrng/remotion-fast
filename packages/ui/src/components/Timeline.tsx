@@ -25,6 +25,7 @@ import { colors, timeline as timelineStyles, typography } from './timeline/style
 import { getPixelsPerFrame, pixelsToFrame, frameToPixels, secondsToFrames } from './timeline/utils/timeFormatter';
 import { calculateSnap, calculateSnapForItemRange, getAllSnapTargets } from './timeline/utils/snapCalculator';
 import { buildPreview as buildItemDragPreview, finalizeDrop as finalizeItemDrop, computeVerticalLandmarks } from './timeline/dnd/itemDragLogic';
+import { currentDraggedAsset, currentAssetDragOffset } from './AssetPanel';
 
 // 声明全局window属性
 declare global {
@@ -50,6 +51,7 @@ export const Timeline: React.FC = () => {
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [draggedItem, setDraggedItem] = useState<{ trackId: string; item: Item } | null>(null);
   const [dragOffset, setDragOffset] = useState<number>(0); // 鼠标相对于素材左边缘的偏移量（像素）
+  const [assetDragOffset, setAssetDragOffset] = useState<number>(0); // asset 拖动时的偏移量
   const lastDragTopRef = useRef<number | null>(null);
 
   // 拖动预览状态：存储预期的落点位置（snap后的）
@@ -67,6 +69,14 @@ export const Timeline: React.FC = () => {
     snapGuideFrame?: number | null; // vertical guide line frame (only for item-start/item-end)
   } | null>(null);
   const [insertPosition, setInsertPosition] = useState<number | null>(null);
+  
+  // Asset拖动预览状态（从AssetPanel拖入时的预览框）
+  const [assetDragPreview, setAssetDragPreview] = useState<{
+    item: Item;
+    trackId: string;
+    isTemporaryTrack: boolean;
+    insertIndex?: number;
+  } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -444,8 +454,188 @@ export const Timeline: React.FC = () => {
   // ==================== 拖放处理（从 AssetPanel 拖入素材 + Timeline内移动）====================
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  }, []);
+    e.dataTransfer.dropEffect = 'copy';
+
+    // 如果是拖动已有item，不处理（由dnd-kit处理）
+    if (draggedItem) {
+      if (assetDragPreview) setAssetDragPreview(null);
+      return;
+    }
+
+    // 检查是否是从AssetPanel拖入的asset
+    // 注意：某些浏览器在dragOver中无法访问dataTransfer数据
+    // 所以我们需要依赖AssetPanel中设置的全局变量
+    const assetId = e.dataTransfer.getData('assetId');
+    const isQuickAdd = e.dataTransfer.getData('quickAdd') === 'true';
+    const quickAddType = e.dataTransfer.getData('quickAddType');
+
+    // 使用导入的 currentDraggedAsset
+    const draggedAsset = currentDraggedAsset;
+
+    console.log('[Timeline.handleDragOver] Drag data:', {
+      assetId,
+      isQuickAdd,
+      quickAddType,
+      draggedAsset,
+      currentDraggedAssetFromImport: currentDraggedAsset,
+      hasDraggedItem: !!draggedItem,
+      dataTransferTypes: Array.from(e.dataTransfer.types),
+    });
+
+    if (!assetId && !isQuickAdd && !draggedAsset) {
+      console.log('[Timeline.handleDragOver] No asset data, clearing preview');
+      if (assetDragPreview) setAssetDragPreview(null);
+      return;
+    }
+    
+    // 计算鼠标位置和目标位置
+    const viewportEl = document.querySelector('.tracks-viewport') as HTMLDivElement | null;
+    if (!viewportEl) return;
+
+    const rect = viewportEl.getBoundingClientRect();
+    // 计算鼠标相对于 viewport 的位置
+    const mouseX = e.clientX - rect.left + viewportEl.scrollLeft - contentInsetLeftPx;
+    const y = e.clientY - rect.top + viewportEl.scrollTop;
+
+    // 计算 asset 左边缘的位置（减去拖动偏移量）
+    const assetLeftX = mouseX - currentAssetDragOffset;
+    const rawFrame = Math.max(0, Math.round(assetLeftX / pixelsPerFrame));
+    const snapResult = calculateSnap(rawFrame, tracks, null, currentFrame, snapEnabled, timelineStyles.snapThreshold);
+    const frame = Math.max(0, snapResult.snappedFrame);
+
+    console.log('[Timeline.handleDragOver] Position calc:', {
+      mouseX: e.clientX,
+      rectLeft: rect.left,
+      scrollLeft: viewportEl.scrollLeft,
+      contentInsetLeftPx,
+      currentAssetDragOffset,
+      mouseXInViewport: mouseX,
+      assetLeftX,
+      rawFrame,
+      frame,
+      pixelsPerFrame,
+    });
+    
+    const trackIndex = Math.floor(y / timelineStyles.trackHeight);
+    const relativeY = y % timelineStyles.trackHeight;
+    const threshold = 20;
+
+    let targetTrackId: string | null = null;
+    let insertIdx: number | null = null;
+
+    // 与 item 拖动逻辑保持一致：检测是否在轨道边界附近（要插入新 track）
+    if (tracks.length > 0 && (relativeY < threshold || relativeY > timelineStyles.trackHeight - threshold)) {
+      // 在轨道边界附近 - 准备插入新 track
+      insertIdx = relativeY < threshold ? trackIndex : trackIndex + 1;
+      if (insertIdx >= 0 && insertIdx <= tracks.length) {
+        // 设置 insertPosition，清除预览框（与 item 拖动一致）
+        setInsertPosition(insertIdx);
+        if (assetDragPreview) setAssetDragPreview(null);
+        return;
+      }
+    } else if (trackIndex >= 0 && trackIndex < tracks.length) {
+      // 在现有轨道上 - 显示预览框
+      targetTrackId = tracks[trackIndex].id;
+    } else if (tracks.length === 0) {
+      // 空时间轴 - 准备创建第一个 track
+      insertIdx = 0;
+      setInsertPosition(insertIdx);
+      if (assetDragPreview) setAssetDragPreview(null);
+      return;
+    }
+
+    if (!targetTrackId) {
+      if (assetDragPreview) setAssetDragPreview(null);
+      setInsertPosition(null);
+      return;
+    }
+
+    // 清除插入位置（因为现在是在现有 track 上）
+    setInsertPosition(null);
+    
+    // 创建预览item（包含完整信息以正确计算高度）
+    let duration = 90; // 默认duration
+    let itemType: any = 'video';
+    let previewItem: Item;
+
+    if (!isQuickAdd) {
+      // 优先使用全局draggedAsset，其次尝试从assets中查找
+      const asset = draggedAsset || assets.find(a => a.id === assetId);
+      if (asset) {
+        itemType = asset.type;
+        if (asset.duration) {
+          duration = secondsToFrames(asset.duration, fps);
+        }
+
+        // 根据类型创建包含完整属性的预览item
+        if (asset.type === 'video') {
+          previewItem = {
+            id: `preview-${Date.now()}`,
+            type: 'video',
+            from: frame,
+            durationInFrames: duration,
+            src: asset.src,
+            waveform: asset.waveform,
+          } as Item;
+        } else if (asset.type === 'audio') {
+          previewItem = {
+            id: `preview-${Date.now()}`,
+            type: 'audio',
+            from: frame,
+            durationInFrames: duration,
+            src: asset.src,
+            waveform: asset.waveform,
+          } as Item;
+        } else if (asset.type === 'image') {
+          previewItem = {
+            id: `preview-${Date.now()}`,
+            type: 'image',
+            from: frame,
+            durationInFrames: duration,
+            src: asset.src,
+          } as Item;
+        } else {
+          previewItem = {
+            id: `preview-${Date.now()}`,
+            type: itemType,
+            from: frame,
+            durationInFrames: duration,
+          } as Item;
+        }
+      } else {
+        previewItem = {
+          id: `preview-${Date.now()}`,
+          type: itemType,
+          from: frame,
+          durationInFrames: duration,
+        } as Item;
+      }
+    } else {
+      itemType = quickAddType;
+      if (quickAddType === 'solid') {
+        duration = 60;
+      }
+      previewItem = {
+        id: `preview-${Date.now()}`,
+        type: itemType,
+        from: frame,
+        durationInFrames: duration,
+      } as Item;
+    }
+    
+    console.log('[Timeline.handleDragOver] Setting asset drag preview:', {
+      previewItem,
+      targetTrackId,
+      frame,
+    });
+
+    setAssetDragPreview({
+      item: previewItem,
+      trackId: targetTrackId,
+      isTemporaryTrack: false, // 始终为 false，与 item 拖动逻辑一致
+      insertIndex: undefined,
+    });
+  }, [draggedItem, assets, tracks, currentFrame, snapEnabled, pixelsPerFrame, fps, assetDragPreview]);
 
   // 创建素材项的辅助函数
   const createItemFromAsset = useCallback((asset: any, frame: number): Item | null => {
@@ -460,6 +650,7 @@ export const Timeline: React.FC = () => {
           // asset.duration is seconds; convert to frames using current fps (with overhang clamp)
           durationInFrames: asset.duration ? secondsToFrames(asset.duration, fps) : 90,
           src: asset.src,
+          sourceStartInFrames: 0,
           waveform: asset.waveform,
         } as Item;
       case 'audio':
@@ -469,6 +660,7 @@ export const Timeline: React.FC = () => {
           from: frame,
           durationInFrames: asset.duration ? secondsToFrames(asset.duration, fps) : 90,
           src: asset.src,
+          sourceStartInFrames: 0,
           waveform: asset.waveform,
         } as Item;
       case 'image':
@@ -546,6 +738,10 @@ export const Timeline: React.FC = () => {
             });
             dispatch({ type: 'SELECT_ITEM', payload: newItem.id });
           }
+          
+          // 清除asset预览
+          setAssetDragPreview(null);
+          setInsertPosition(null);
         }, 0);
       }
     },
@@ -648,6 +844,8 @@ export const Timeline: React.FC = () => {
     setDraggedItem(null);
     setDragOffset(0);
     setDragPreview(null);
+    setAssetDragPreview(null);
+    setInsertPosition(null);
     window.currentDraggedItem = null;
   }, []);
 
@@ -667,10 +865,22 @@ export const Timeline: React.FC = () => {
       const assetId = e.dataTransfer.getData('assetId');
 
 
-      // 计算放置位置
+      // 计算放置位置（与 handleDragOver 逻辑保持一致）
       const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const rawFrame = pixelsToFrame(x, pixelsPerFrame);
+      const mouseX = e.clientX - rect.left;
+      // 减去 asset 拖动偏移量，使 drop 位置与预览位置一致
+      const assetLeftX = mouseX - currentAssetDragOffset;
+      const rawFrame = pixelsToFrame(assetLeftX, pixelsPerFrame);
+
+      console.log('[Timeline.handleDrop] Drop position calc:', {
+        mouseX: e.clientX,
+        rectLeft: rect.left,
+        currentAssetDragOffset,
+        mouseXRelative: mouseX,
+        assetLeftX,
+        rawFrame,
+        pixelsPerFrame,
+      });
 
       // 应用吸附
       const snapResult = calculateSnap(
@@ -683,6 +893,12 @@ export const Timeline: React.FC = () => {
       );
 
       const frame = Math.max(0, snapResult.snappedFrame);
+
+      console.log('[Timeline.handleDrop] Final position:', {
+        rawFrame,
+        snappedFrame: frame,
+        trackId,
+      });
 
       let newItem: Item | null = null;
 
@@ -725,6 +941,10 @@ export const Timeline: React.FC = () => {
 
       // 选中新添加的素材
       dispatch({ type: 'SELECT_ITEM', payload: newItem.id });
+      
+      // 清除asset预览
+      setAssetDragPreview(null);
+      setInsertPosition(null);
     },
     [draggedItem, assets, tracks, currentFrame, snapEnabled, pixelsPerFrame, dispatch, createItemFromAsset]
   );
@@ -766,6 +986,14 @@ export const Timeline: React.FC = () => {
     <div
       ref={containerRef}
       data-timeline-container
+      onDragEnd={() => {
+        setAssetDragPreview(null);
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget === e.target) {
+          setAssetDragPreview(null);
+        }
+      }}
       style={{
         width: '100%',
         height: '100%',
@@ -897,6 +1125,7 @@ export const Timeline: React.FC = () => {
               onItemDrop={() => {}}
               onItemDragEnd={handleItemDragEnd}
               dragPreview={dragPreview}
+              assetDragPreview={assetDragPreview}
               onScrollXChange={setScrollLeft}
               viewportWidth={viewportContentWidth}
               labelsPortal={labelsPortalEl}

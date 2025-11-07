@@ -277,13 +277,24 @@ export function buildPreview(
       insertIndex = 0;
     }
   } else if (midOverlapK != null) {
-    // Case E: middle zone overlap -> only create when extreme or non-adjacent
+    // Case E: middle zone overlap -> create based on position and source track item count
     const extreme = midOverlapK === 0 || midOverlapK === args.tracks.length;
     const nonAdjacent = midOverlapK < srcIdx || midOverlapK > srcIdx + 1;
+    const isAdjacent = midOverlapK === srcIdx || midOverlapK === srcIdx + 1;
+    const sourceTrack = args.tracks.find((t) => t.id === args.originalTrackId);
+    const sourceHasMultipleItems = sourceTrack && sourceTrack.items.length > 1;
+
+    // 如果是极端位置或非相邻位置，总是创建
     if (extreme || nonAdjacent) {
       willCreateNewTrack = true;
       insertIndex = midOverlapK;
-    } // else: adjacent middle overlap -> treat as same-track (no-op)
+    }
+    // 如果是相邻位置，只有当源轨道有多个 item 时才创建
+    else if (isAdjacent && sourceHasMultipleItems) {
+      willCreateNewTrack = true;
+      insertIndex = midOverlapK;
+    }
+    // 否则：相邻位置且只有一个 item → 不创建（保持在原轨道）
   }
 
   const snapPref = preferItemEdgeSnap(

@@ -48,6 +48,21 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number }> = ({ ite
   }
 
   if (item.type === 'video') {
+    // Log once per item id for debugging startFrom
+    const loggedRef = React.useRef(false);
+    if (!loggedRef.current) {
+      try {
+        console.log('[Preview] Video render', {
+          id: item.id,
+          from: item.from,
+          durationInFrames: item.durationInFrames,
+          sourceStartInFrames: (item as any).sourceStartInFrames || 0,
+        });
+      } catch {}
+      loggedRef.current = true;
+    }
+    const sourceStart = (item as any).sourceStartInFrames || 0;
+
     // Calculate audio volume with fade in/out
     const audioFadeIn = item.audioFadeIn || 0;
     const audioFadeOut = item.audioFadeOut || 0;
@@ -75,6 +90,9 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number }> = ({ ite
         <OffthreadVideo
           src={item.src}
           style={{ width: '100%', height: '100%' }}
+          // posterFrame is supported at runtime but not yet in type definitions
+          {...({ posterFrame: sourceStart } as any)}
+          startFrom={sourceStart}
           volume={audioVolume}
         />
       </AbsoluteFill>
@@ -82,6 +100,18 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number }> = ({ ite
   }
 
   if (item.type === 'audio') {
+    const loggedRef = React.useRef(false);
+    if (!loggedRef.current) {
+      try {
+        console.log('[Preview] Audio render', {
+          id: item.id,
+          from: item.from,
+          durationInFrames: item.durationInFrames,
+          sourceStartInFrames: (item as any).sourceStartInFrames || 0,
+        });
+      } catch {}
+      loggedRef.current = true;
+    }
     // Calculate audio volume with fade in/out
     const audioFadeIn = item.audioFadeIn || 0;
     const audioFadeOut = item.audioFadeOut || 0;
@@ -105,7 +135,7 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number }> = ({ ite
       });
     }
 
-    return <Audio src={item.src} volume={baseVolume * volumeMultiplier} />;
+    return <Audio src={item.src} startFrom={(item as any).sourceStartInFrames || 0} volume={baseVolume * volumeMultiplier} />;
   }
 
   if (item.type === 'image') {

@@ -85,11 +85,14 @@ export const TimelineTrack: React.FC<TimelineTrackProps> = ({
 
       // 获取视频/音频素材的最大时长限制（以帧为单位）
       let maxDurationInFrames: number | undefined;
+      let sourceOffset = 0;
       if ((item.type === 'video' || item.type === 'audio') && 'src' in item) {
         const asset = assets.find((a) => a.src === item.src);
         if (asset?.duration) {
           // Convert seconds to frames using project fps (no 30fps magic number)
-          maxDurationInFrames = secondsToFrames(asset.duration, state.fps);
+          const totalFrames = secondsToFrames(asset.duration, state.fps);
+          sourceOffset = (item as any).sourceStartInFrames || 0;
+          maxDurationInFrames = Math.max(0, totalFrames - sourceOffset);
         }
       }
 
@@ -103,10 +106,13 @@ export const TimelineTrack: React.FC<TimelineTrackProps> = ({
           (!maxDurationInFrames || newDuration <= maxDurationInFrames);
 
         if (isValidDuration) {
+          const consumed = newFrom - item.from;
+          const newSourceOffset = Math.max(0, ((item as any).sourceStartInFrames || 0) + consumed);
           onUpdateItem(itemId, {
             from: newFrom,
             durationInFrames: newDuration,
-          });
+            ...(item.type === 'video' || item.type === 'audio' ? { sourceStartInFrames: newSourceOffset } : {}),
+          } as any);
         }
       } else {
         // 调整时长

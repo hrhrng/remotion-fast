@@ -5,6 +5,7 @@ import { loadAudioWaveform } from '@remotion-fast/core';
 
 // Export for TimelineTracksContainer to use
 export let currentDraggedAsset: any = null;
+export let currentAssetDragOffset: number = 0; // 鼠标相对于 asset 卡片左边缘的偏移量（像素）
 
 export const AssetPanel: React.FC = () => {
   const { state, dispatch } = useEditor();
@@ -162,6 +163,12 @@ export const AssetPanel: React.FC = () => {
 
   const handleAssetDragStart = (e: React.DragEvent, asset: Asset) => {
     currentDraggedAsset = asset; // Store globally
+
+    // 计算鼠标相对于 asset 卡片左边缘的偏移量
+    const target = e.currentTarget as HTMLElement;
+    const rect = target.getBoundingClientRect();
+    currentAssetDragOffset = e.clientX - rect.left;
+
     e.dataTransfer.effectAllowed = 'copy';
     e.dataTransfer.setData('text/plain', asset.id); // Use text/plain for better compatibility
     e.dataTransfer.setData('assetId', asset.id);
@@ -214,6 +221,12 @@ export const AssetPanel: React.FC = () => {
     };
 
     currentDraggedAsset = { ...pseudoAsset, quickAdd: true, quickAddType: type }; // Store globally
+
+    // 计算鼠标相对于按钮左边缘的偏移量
+    const target = e.currentTarget as HTMLElement;
+    const rect = target.getBoundingClientRect();
+    currentAssetDragOffset = e.clientX - rect.left;
+
     e.dataTransfer.effectAllowed = 'copy';
     e.dataTransfer.setData('text/plain', pseudoAsset.id); // Use text/plain for compatibility
     e.dataTransfer.setData('assetId', pseudoAsset.id);

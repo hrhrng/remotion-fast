@@ -137,6 +137,7 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
       const videoSrc = item.src;
       const duration = asset.duration;
       const totalFrames = secondsToFrames(duration, state.fps);
+      const sourceOffset = (item as any).sourceStartInFrames || 0;
 
       // 计算目标显示区域的高度和宽度（像素）
       const displayHeight = hasWaveform ? thumbnailHeight : itemHeight; // 与实际渲染一致
@@ -249,8 +250,12 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
         const destFrameWidth = Math.max(1, Math.floor(entry.frameWidth * (destHeight / entry.frameHeight)));
         const columns = Math.max(1, Math.ceil(timelinePixelWidth / destFrameWidth));
         const colToIdx: number[] = new Array(columns);
+        // Map columns to samples within [startRatio, endRatio]
+        const startRatio = Math.max(0, Math.min(1, sourceOffset / totalFrames));
+        const endRatio = Math.max(startRatio, Math.min(1, (sourceOffset + item.durationInFrames) / totalFrames));
         for (let col = 0; col < columns; col++) {
-          const ratio = columns === 1 ? 0 : col / (columns - 1);
+          const local = columns === 1 ? 0 : col / (columns - 1);
+          const ratio = startRatio + (endRatio - startRatio) * local;
           colToIdx[col] = Math.min(entry.sampleCount - 1, Math.max(0, Math.round(ratio * (entry.sampleCount - 1))));
         }
 
@@ -292,8 +297,11 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
             columns = Math.max(1, Math.ceil(timelinePixelWidth / destFrameWidth));
             colToIdx = new Array(columns);
             idxToCols = new Array(entry.sampleCount).fill(null).map(() => []);
+            const startRatio = Math.max(0, Math.min(1, sourceOffset / totalFrames));
+            const endRatio = Math.max(startRatio, Math.min(1, (sourceOffset + item.durationInFrames) / totalFrames));
             for (let col = 0; col < columns; col++) {
-              const ratio = columns === 1 ? 0 : col / (columns - 1);
+              const local = columns === 1 ? 0 : col / (columns - 1);
+              const ratio = startRatio + (endRatio - startRatio) * local;
               const idx = Math.min(entry.sampleCount - 1, Math.max(0, Math.round(ratio * (entry.sampleCount - 1))));
               colToIdx[col] = idx;
               idxToCols[idx].push(col);
@@ -334,11 +342,11 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
     }
 
     const zoomChanged = Math.abs(pixelsPerFrame - lastZoomRef.current) > 0.01;
-    if (zoomChanged && !isGeneratingThumbnail) {
+    if ((zoomChanged || (item as any).sourceStartInFrames !== undefined) && !isGeneratingThumbnail) {
       lastZoomRef.current = pixelsPerFrame;
       generateDynamicThumbnail();
     }
-  }, [pixelsPerFrame, generateDynamicThumbnail, isGeneratingThumbnail, item.id]);
+  }, [pixelsPerFrame, generateDynamicThumbnail, isGeneratingThumbnail, item.id, (item as any).sourceStartInFrames, item.durationInFrames]);
 
   // Also regenerate when waveform availability toggles (e.g., when item.waveform loads)
   const prevHasWaveformRef = React.useRef<boolean | null>(null);
@@ -407,9 +415,13 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
     if (asset?.duration) {
       const totalFrames = secondsToFrames(asset.duration, state.fps);
       const currentFrames = item.durationInFrames;
-      // 截取波形数据：只显示当前item时长对应的部分
-      const endIndex = Math.floor(waveform.length * (currentFrames / totalFrames));
-      visibleWaveform = waveform.slice(0, Math.max(1, endIndex));
+      const sourceOffset = (item as any).sourceStartInFrames || 0;
+      const startIndex = Math.floor(waveform.length * (sourceOffset / totalFrames));
+      const endIndex = Math.floor(waveform.length * ((sourceOffset + currentFrames) / totalFrames));
+      visibleWaveform = waveform.slice(
+        Math.max(0, Math.min(waveform.length - 1, startIndex)),
+        Math.max(1, Math.min(waveform.length, endIndex))
+      );
     }
 
     const barCount = visibleWaveform.length;
@@ -758,6 +770,10 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
             height: `${thumbnailHeight}px`,
             pointerEvents: 'none',
             zIndex: 1,
+            // Show poster under the canvas to avoid black flashes
+            backgroundImage: displayThumbnail ? `url(${displayThumbnail})` : undefined,
+            backgroundSize: 'cover',
+            backgroundPosition: 'left top',
           }}
         >
           <canvas

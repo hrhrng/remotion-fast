@@ -105,6 +105,86 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
         ),
       };
 
+    case 'SPLIT_ITEM': {
+      const { trackId, itemId, splitFrame } = action.payload;
+
+      return {
+        ...state,
+        tracks: state.tracks.map((t) => {
+          if (t.id !== trackId) return t;
+
+          const newItems = t.items.flatMap((item) => {
+            if (item.id !== itemId) return [item];
+
+            // Check if split frame is within item bounds
+            const itemEnd = item.from + item.durationInFrames;
+            if (splitFrame <= item.from || splitFrame >= itemEnd) {
+              // Split frame is not within item bounds, keep original
+              return [item];
+            }
+
+            // Calculate durations for split items
+            const firstDuration = splitFrame - item.from;
+            const secondDuration = itemEnd - splitFrame;
+
+            // Determine in-source offset (for media items); default to 0
+            const currentOffset =
+              (item as any).sourceStartInFrames ? (item as any).sourceStartInFrames as number : 0;
+            const offsetIncrement = firstDuration; // frames consumed by the first piece
+
+            // Create first part (keeps original id)
+            const firstItem: Item = {
+              ...item,
+              durationInFrames: firstDuration,
+              // Preserve existing in-source offset for media
+              ...(item.type === 'video' || item.type === 'audio'
+                ? { sourceStartInFrames: currentOffset }
+                : {}),
+            };
+
+            // Create second part (new id)
+            const secondItem: Item = {
+              ...item,
+              id: `${item.id}-split-${Date.now()}`,
+              from: splitFrame,
+              durationInFrames: secondDuration,
+              // Second piece starts later in the source
+              ...(item.type === 'video' || item.type === 'audio'
+                ? { sourceStartInFrames: currentOffset + offsetIncrement }
+                : {}),
+            };
+
+            // Debug: log split details for verification
+            try {
+              console.log('[SPLIT_ITEM] split', {
+                trackId,
+                itemId: item.id,
+                splitFrame,
+                itemFrom: item.from,
+                itemDuration: item.durationInFrames,
+                first: {
+                  id: firstItem.id,
+                  from: (firstItem as any).from,
+                  duration: firstItem.durationInFrames,
+                  sourceStartInFrames: (firstItem as any).sourceStartInFrames || 0,
+                },
+                second: {
+                  id: secondItem.id,
+                  from: (secondItem as any).from,
+                  duration: secondItem.durationInFrames,
+                  sourceStartInFrames: (secondItem as any).sourceStartInFrames || 0,
+                },
+              });
+            } catch {}
+
+            return [firstItem, secondItem];
+          });
+
+          return { ...t, items: newItems };
+        }),
+      };
+    }
+
     case 'SELECT_ITEM':
       return { ...state, selectedItemId: action.payload };
 

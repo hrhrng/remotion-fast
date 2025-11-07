@@ -14,9 +14,14 @@ export const PreviewCanvas: React.FC = () => {
     };
   }, [state.tracks]);
 
-  // Sync player frame with editor state
+  // Track whether we're syncing from player to avoid feedback loops
+  const isSyncingFromPlayer = useRef(false);
+  const lastDispatchTsRef = useRef(0);
+  const lastDispatchedFrameRef = useRef<number | null>(null);
+
+  // Sync player frame with editor state (timeline → preview)
   useEffect(() => {
-    if (playerRef.current && !state.playing) {
+    if (playerRef.current && !state.playing && !isSyncingFromPlayer.current) {
       playerRef.current.seekTo(state.currentFrame);
     }
   }, [state.currentFrame, state.playing]);
@@ -32,13 +37,52 @@ export const PreviewCanvas: React.FC = () => {
     }
   }, [state.playing]);
 
+  // Throttled sync from preview → timeline to avoid re-rendering the entire UI every frame
   const handleFrameUpdate = (frame: number) => {
-    dispatch({ type: 'SET_CURRENT_FRAME', payload: frame });
+    // Skip if same as last dispatched to avoid redundant work
+    if (lastDispatchedFrameRef.current === frame) return;
+
+    const now = performance.now();
+    // Throttle to ~25Hz while playing to keep UI smooth
+    const minIntervalMs = 40;
+    if (now - lastDispatchTsRef.current < minIntervalMs && state.playing) return;
+
+    lastDispatchTsRef.current = now;
+    lastDispatchedFrameRef.current = frame;
+
+    if (frame !== state.currentFrame) {
+      isSyncingFromPlayer.current = true;
+      dispatch({ type: 'SET_CURRENT_FRAME', payload: frame });
+      // Allow the seek effect to observe the flag in the same tick
+      setTimeout(() => {
+        isSyncingFromPlayer.current = false;
+      }, 0);
+    }
   };
 
-  const handlePlayingChange = (playing: boolean) => {
-    dispatch({ type: 'SET_PLAYING', payload: playing });
-  };
+  // Attach player event listeners (frameupdate/play/pause)
+  useEffect(() => {
+    const player = playerRef.current as any;
+    if (!player) return;
+
+    const onFrame = () => {
+      const frame = player.getCurrentFrame();
+      handleFrameUpdate(frame);
+    };
+
+    const onPlay = () => dispatch({ type: 'SET_PLAYING', payload: true });
+    const onPause = () => dispatch({ type: 'SET_PLAYING', payload: false });
+
+    player.addEventListener('frameupdate', onFrame);
+    player.addEventListener('play', onPlay);
+    player.addEventListener('pause', onPause);
+
+    return () => {
+      player.removeEventListener('frameupdate', onFrame);
+      player.removeEventListener('play', onPlay);
+      player.removeEventListener('pause', onPause);
+    };
+  }, [dispatch]);
 
   return (
     <div style={styles.container}>

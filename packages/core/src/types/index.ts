@@ -23,6 +23,9 @@ export type TextItem = BaseItem & {
 export type VideoItem = BaseItem & {
   type: 'video';
   src: string;
+  // Number of frames to skip from the start of the source media
+  // when rendering this item (i.e., in-source start offset)
+  sourceStartInFrames?: number;
   volume?: number; // Audio volume for video (0-2 range)
   waveform?: number[];
   videoFadeIn?: number; // Video fade in duration in frames
@@ -34,6 +37,9 @@ export type VideoItem = BaseItem & {
 export type AudioItem = BaseItem & {
   type: 'audio';
   src: string;
+  // Number of frames to skip from the start of the source media
+  // when rendering this item (i.e., in-source start offset)
+  sourceStartInFrames?: number;
   volume?: number;
   waveform?: number[];
   audioFadeIn?: number; // Audio fade in duration in frames
@@ -107,6 +113,7 @@ export type EditorAction =
   | { type: 'ADD_ITEM'; payload: { trackId: string; item: Item } }
   | { type: 'REMOVE_ITEM'; payload: { trackId: string; itemId: string } }
   | { type: 'UPDATE_ITEM'; payload: { trackId: string; itemId: string; updates: Partial<Item> } }
+  | { type: 'SPLIT_ITEM'; payload: { trackId: string; itemId: string; splitFrame: number } }
   | { type: 'SELECT_ITEM'; payload: string | null }
   | { type: 'SELECT_TRACK'; payload: string | null }
   | { type: 'SET_CURRENT_FRAME'; payload: number }

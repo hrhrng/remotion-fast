@@ -176,13 +176,48 @@ export const PropertiesPanel: React.FC = () => {
     });
   };
 
+  // Check if playhead is within item bounds
+  const itemEnd = item.from + item.durationInFrames;
+  const canSplit = state.currentFrame > item.from && state.currentFrame < itemEnd;
+
+  const splitItem = () => {
+    if (!canSplit) return;
+
+    dispatch({
+      type: 'SPLIT_ITEM',
+      payload: {
+        trackId,
+        itemId: item.id,
+        splitFrame: state.currentFrame,
+      },
+    });
+  };
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
         <h2 style={styles.title}>Properties</h2>
-        <button onClick={deleteItem} style={styles.deleteButton}>
-          Delete
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={splitItem}
+            disabled={!canSplit}
+            style={{
+              ...styles.splitButton,
+              opacity: canSplit ? 1 : 0.5,
+              cursor: canSplit ? 'pointer' : 'not-allowed',
+            }}
+            title={
+              canSplit
+                ? `Split at frame ${state.currentFrame}`
+                : 'Move playhead onto the selected item to split'
+            }
+          >
+            Split
+          </button>
+          <button onClick={deleteItem} style={styles.deleteButton}>
+            Delete
+          </button>
+        </div>
       </div>
 
       <div style={styles.content}>
@@ -348,6 +383,15 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '16px',
     fontWeight: 600,
     color: '#ffffff',
+  },
+  splitButton: {
+    padding: '6px 12px',
+    backgroundColor: '#0066ff',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '12px',
   },
   deleteButton: {
     padding: '6px 12px',
