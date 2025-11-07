@@ -9,7 +9,8 @@ import { TimelinePlayhead } from './timeline/TimelinePlayhead';
 import { useKeyboardShortcuts } from './timeline/hooks/useKeyboardShortcuts';
 import { colors, timeline as timelineStyles, typography } from './timeline/styles';
 import { getPixelsPerFrame, pixelsToFrame, frameToPixels, secondsToFrames } from './timeline/utils/timeFormatter';
-import { calculateSnap, calculateSnapForItemRange } from './timeline/utils/snapCalculator';
+import { calculateSnap, calculateSnapForItemRange, getAllSnapTargets } from './timeline/utils/snapCalculator';
+import { buildPreview as buildItemDragPreview, finalizeDrop as finalizeItemDrop, computeVerticalLandmarks } from './timeline/dnd/itemDragLogic';
 
 // 声明全局window属性
 declare global {
@@ -35,6 +36,7 @@ export const Timeline: React.FC = () => {
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [draggedItem, setDraggedItem] = useState<{ trackId: string; item: Item } | null>(null);
   const [dragOffset, setDragOffset] = useState<number>(0); // 鼠标相对于素材左边缘的偏移量（像素）
+  const lastDragTopRef = useRef<number | null>(null);
 
   // 拖动预览状态：存储预期的落点位置（snap后的）
   const [dragPreview, setDragPreview] = useState<{
@@ -44,6 +46,11 @@ export const Timeline: React.FC = () => {
     originalFrom: number;
     previewTrackId: string;
     previewFrame: number;
+    rawPreviewFrame?: number;
+    // Snap visualization info
+    snapEdge?: 'left' | 'right' | null;
+    snapTargetType?: 'item-start' | 'item-end' | 'playhead' | 'track-start' | 'grid' | undefined | null;
+    snapGuideFrame?: number | null; // vertical guide line frame (only for item-start/item-end)
   } | null>(null);
   const [insertPosition, setInsertPosition] = useState<number | null>(null);
 
@@ -81,7 +88,7 @@ export const Timeline: React.FC = () => {
     console.log('[DND] onDragStart', { id: item.id, trackId, rect: event.active.rect.current });
 
     setDraggedItem({ trackId, item });
-    window.currentDraggedItem = { trackId, item };
+    // Do not set window.currentDraggedItem for dnd-kit flow; keep it for native drag only
 
     const initialLeft = event.active.rect.current.initial?.left ?? 0;
     const activator = event.activatorEvent as PointerEvent | MouseEvent | null;
@@ -95,6 +102,7 @@ export const Timeline: React.FC = () => {
       originalFrom: item.from,
       previewTrackId: trackId,
       previewFrame: item.from,
+      rawPreviewFrame: item.from,
     };
     // eslint-disable-next-line no-console
     console.log('[DND] init preview', nextPreview);
@@ -115,41 +123,63 @@ export const Timeline: React.FC = () => {
 
     const containerRect = container.getBoundingClientRect();
     const viewportRect = viewportEl.getBoundingClientRect();
+    const leftWithinTracks = leftOnViewport - containerRect.left - timelineStyles.trackLabelWidth - contentInsetLeftPx + viewportEl.scrollLeft;
+    // Use content root top as origin so that track boundaries are exact multiples of trackHeight
+    const contentRoot = (viewportEl.firstElementChild as HTMLElement | null);
+    const contentTop = contentRoot ? contentRoot.getBoundingClientRect().top : viewportRect.top;
+    // Prefer actual dragged element top in viewport if available
+    let itemTopViewport = topOnViewport;
+    try {
+      const currentEl = document.querySelector(`[data-dnd-id="item-${draggedItem.item.id}"]`) as HTMLElement | null;
+      if (currentEl) {
+        const r = currentEl.getBoundingClientRect();
+        if (Number.isFinite(r.top)) itemTopViewport = r.top;
+      }
+    } catch { /* ignore */ }
+    const topY = itemTopViewport - contentTop + (viewportEl.scrollTop || 0);
 
-    const leftWithinTracks = leftOnViewport - containerRect.left - timelineStyles.trackLabelWidth - contentInsetLeftPx;
-    const rawFrame = Math.max(0, Math.floor(leftWithinTracks / pixelsPerFrame));
-
-    const snapResult = calculateSnapForItemRange(
-      rawFrame,
-      draggedItem.item.durationInFrames,
-      tracks,
-      draggedItem.item.id,
-      currentFrame,
-      !!snapEnabled,
-      timelineStyles.snapThreshold
-    );
-
-    const centerY = topOnViewport + heightPx / 2;
-    const yInViewport = centerY - viewportRect.top + viewportEl.scrollTop;
-    const trackIndex = Math.max(0, Math.min(tracks.length - 1, Math.floor(yInViewport / timelineStyles.trackHeight)));
-    const trackId = tracks[trackIndex]?.id || dragPreview.previewTrackId;
-
-    const next = {
-      ...dragPreview,
-      previewTrackId: trackId,
-      previewFrame: Math.max(0, snapResult.snappedFrame),
-    };
+    const insertThresholdPx = Math.min(12, Math.floor(timelineStyles.trackHeight * 0.15));
+    // Debug: log decision landmarks relative to source track boundaries
+    const H = heightPx;
+    const q1 = topY + H / 3;
+    const q2 = topY + (2 * H) / 3;
+    const srcIdx = Math.max(0, tracks.findIndex((t) => t.id === dragPreview.originalTrackId));
+    const srcTop = srcIdx * timelineStyles.trackHeight;
+    const srcBottom = (srcIdx + 1) * timelineStyles.trackHeight;
     // eslint-disable-next-line no-console
-    console.log('[DND] update preview', {
-      leftWithinTracks,
-      rawFrame,
-      snappedFrame: next.previewFrame,
-      trackIndex,
-      trackId,
-      edge: snapResult.edge,
-      target: snapResult.target,
+    console.log('[DND][landmarks]', {
+      topY: Math.round(topY),
+      q1: Math.round(q1),
+      q2: Math.round(q2),
+      srcTop: Math.round(srcTop),
+      srcBottom: Math.round(srcBottom),
     });
-    setDragPreview(next);
+    const preview = buildItemDragPreview({
+      leftWithinTracksPx: leftWithinTracks,
+      itemTopY: topY,
+      itemHeightPx: heightPx,
+      prevItemTopY: lastDragTopRef.current ?? undefined,
+      pixelsPerFrame,
+      tracks,
+      item: draggedItem.item,
+      originalTrackId: dragPreview.originalTrackId,
+      currentFrame,
+      snapEnabled: !!snapEnabled,
+      trackHeight: timelineStyles.trackHeight,
+      insertThresholdPx: insertThresholdPx,
+    });
+
+    setInsertPosition(preview.willCreateNewTrack ? preview.insertIndex : null);
+    setDragPreview({
+      ...dragPreview,
+      previewTrackId: preview.previewTrackId,
+      previewFrame: preview.previewFrame,
+      rawPreviewFrame: preview.rawPreviewFrame,
+      snapEdge: undefined,
+      snapTargetType: undefined,
+      snapGuideFrame: preview.snapGuideFrame,
+    });
+    lastDragTopRef.current = topY;
   };
 
   const onDndItemMove = useCallback((event: DragMoveEvent) => {
@@ -178,31 +208,52 @@ export const Timeline: React.FC = () => {
       return;
     }
 
-    const { item, originalTrackId, previewTrackId, previewFrame } = dragPreview;
+    const { item, originalTrackId } = dragPreview;
     // eslint-disable-next-line no-console
     console.log('[DND] onDragEnd', {
       itemId: item.id,
       fromTrack: originalTrackId,
-      toTrack: previewTrackId,
-      frame: previewFrame,
+      toTrack: dragPreview.previewTrackId,
+      frame: dragPreview.previewFrame,
     });
-    const targetTrackId = previewTrackId || originalTrackId;
-    if (originalTrackId === targetTrackId) {
+    const drop = finalizeItemDrop(
+      {
+        previewTrackId: dragPreview.previewTrackId,
+        previewFrame: dragPreview.previewFrame,
+        rawPreviewFrame: dragPreview.rawPreviewFrame ?? dragPreview.previewFrame,
+        insertIndex: insertPosition,
+        willCreateNewTrack: insertPosition != null,
+        snapGuideFrame: dragPreview.snapGuideFrame ?? null,
+      },
+      tracks,
+      originalTrackId
+    );
+
+    if (drop.type === 'create-track') {
+      const newTrack = {
+        id: `track-${Date.now()}`,
+        name: item.type.charAt(0).toUpperCase() + item.type.slice(1),
+        items: [{ ...item, from: drop.frame }],
+      };
+      dispatch({ type: 'INSERT_TRACK', payload: { track: newTrack, index: drop.insertIndex } });
+      dispatch({ type: 'REMOVE_ITEM', payload: { trackId: originalTrackId, itemId: item.id } });
+    } else if (drop.type === 'move-within-track') {
       dispatch({
         type: 'UPDATE_ITEM',
-        payload: { trackId: targetTrackId, itemId: item.id, updates: { from: Math.max(0, previewFrame) } },
+        payload: { trackId: drop.targetTrackId, itemId: item.id, updates: { from: drop.frame } },
       });
-    } else {
+    } else if (drop.type === 'move-to-track') {
       dispatch({ type: 'REMOVE_ITEM', payload: { trackId: originalTrackId, itemId: item.id } });
-      dispatch({ type: 'ADD_ITEM', payload: { trackId: targetTrackId, item: { ...item, from: Math.max(0, previewFrame) } } });
+      dispatch({ type: 'ADD_ITEM', payload: { trackId: drop.targetTrackId, item: { ...item, from: drop.frame } } });
     }
 
     dispatch({ type: 'SELECT_ITEM', payload: item.id });
     setDraggedItem(null);
     setDragOffset(0);
     setDragPreview(null);
+    setInsertPosition(null);
     window.currentDraggedItem = null;
-  }, [dragPreview, dispatch]);
+  }, [dragPreview, dispatch, insertPosition, tracks]);
 
   // Measure available content width (excluding the fixed track label gutter).
   // We use it to:
@@ -815,6 +866,7 @@ export const Timeline: React.FC = () => {
               viewportWidth={viewportContentWidth}
               labelsPortal={labelsPortalEl}
               contentInsetLeftPx={contentInsetLeftPx}
+              externalInsertPosition={insertPosition}
             />
           </DndContext>
 

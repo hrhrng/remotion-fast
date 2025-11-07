@@ -49,80 +49,58 @@ export function calculateSnap(
     };
   }
 
-  const snapTargets: SnapTarget[] = [];
+  // Build target groups and prefer item edges first, then playhead/track-start, then grid
+  const itemEdgeTargets: SnapTarget[] = [];
+  const secondaryTargets: SnapTarget[] = [];
+  const gridTargets: SnapTarget[] = [];
 
-  // 1. 轨道起点（帧 0）
-  snapTargets.push({
-    frame: 0,
-    type: 'track-start',
-    label: '轨道起点',
-  });
+  // Secondary: track start and playhead
+  secondaryTargets.push({ frame: 0, type: 'track-start', label: '轨道起点' });
+  secondaryTargets.push({ frame: playheadFrame, type: 'playhead', label: '播放头' });
 
-  // 2. 播放头位置
-  snapTargets.push({
-    frame: playheadFrame,
-    type: 'playhead',
-    label: '播放头',
-  });
-
-  // 3. 其他素材的起点和终点
+  // Item edges from all tracks except the current item
   tracks.forEach((track) => {
     track.items.forEach((item) => {
-      // 排除当前拖拽的素材
       if (item.id === currentItemId) return;
-
-      // 素材起点
-      snapTargets.push({
-        frame: item.from,
-        type: 'item-start',
-        label: `${item.type} 起点`,
-      });
-
-      // 素材终点
-      snapTargets.push({
-        frame: item.from + item.durationInFrames,
-        type: 'item-end',
-        label: `${item.type} 终点`,
-      });
+      itemEdgeTargets.push({ frame: item.from, type: 'item-start', label: `${item.type} 起点` });
+      itemEdgeTargets.push({ frame: item.from + item.durationInFrames, type: 'item-end', label: `${item.type} 终点` });
     });
   });
 
-  // 4. 网格吸附（每 5 帧）
+  // Grid
   const gridFrame = Math.round(frame / timeline.snapGridInterval) * timeline.snapGridInterval;
-  snapTargets.push({
-    frame: gridFrame,
-    type: 'grid',
-    label: '网格',
-  });
+  gridTargets.push({ frame: gridFrame, type: 'grid', label: '网格' });
 
-  // 找到最近的吸附目标
-  let closestTarget: SnapTarget | null = null;
-  let minDistance = threshold;
-
-  snapTargets.forEach((target) => {
-    // 对"网格"吸附施加轻微的距离惩罚，优先让素材边缘/播放头被吸附
-    // 这样能减少“总往网格吸”的不自然感
-    const penalty = target.type === 'grid' ? 0.25 : 0;
-    const distance = Math.abs(target.frame - frame) + penalty;
-    if (distance < minDistance) {
-      minDistance = distance;
-      closestTarget = target;
+  const pickFrom = (targets: SnapTarget[]): SnapTarget | null => {
+    let best: SnapTarget | null = null;
+    let bestDist = threshold;
+    for (const t of targets) {
+      const dist = Math.abs(t.frame - frame);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = t;
+      }
     }
-  });
+    return best;
+  };
 
-  if (closestTarget) {
-    return {
-      snappedFrame: closestTarget.frame,
-      target: closestTarget,
-      didSnap: true,
-    };
+  // Try item edges first
+  const itemChoice = pickFrom(itemEdgeTargets);
+  if (itemChoice) {
+    return { snappedFrame: itemChoice.frame, target: itemChoice, didSnap: true };
+  }
+  // Then playhead/track start
+  const secondaryChoice = pickFrom(secondaryTargets);
+  if (secondaryChoice) {
+    return { snappedFrame: secondaryChoice.frame, target: secondaryChoice, didSnap: true };
+  }
+  // Finally grid
+  const gridChoice = pickFrom(gridTargets);
+  if (gridChoice) {
+    return { snappedFrame: gridChoice.frame, target: gridChoice, didSnap: true };
   }
 
-  return {
-    snappedFrame: frame,
-    target: null,
-    didSnap: false,
-  };
+  return { snappedFrame: frame, target: null, didSnap: false };
 }
 
 /**

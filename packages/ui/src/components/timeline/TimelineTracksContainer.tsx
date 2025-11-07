@@ -45,6 +45,12 @@ interface TimelineTracksContainerProps {
     originalFrom: number;
     previewTrackId: string;
     previewFrame: number;
+    // Optional raw snapped frame before any collision push; used when creating new tracks
+    rawPreviewFrame?: number;
+    // Snap visualization
+    snapEdge?: 'left' | 'right' | null;
+    snapTargetType?: 'item-start' | 'item-end' | 'playhead' | 'track-start' | 'grid' | undefined | null;
+    snapGuideFrame?: number | null;
   } | null;
   // Horizontal scroll sync – report viewport scrollLeft to parent
   onScrollXChange?: (scrollLeft: number) => void;
@@ -54,6 +60,8 @@ interface TimelineTracksContainerProps {
   labelsPortal?: HTMLElement | null;
   // Visual left inset for right content (px). Applied as padding on the tracks viewport.
   contentInsetLeftPx?: number;
+  // External insert position (for dnd-kit drags). If provided, overrides internal detection
+  externalInsertPosition?: number | null;
 }
 
 // Store dragged data globally to work around dataTransfer issues
@@ -83,6 +91,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
   viewportWidth,
   labelsPortal,
   contentInsetLeftPx,
+  externalInsertPosition,
 }) => {
   const { state, dispatch } = useEditor();
   const { tracks } = state;
@@ -95,6 +104,8 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
   const [scrollSync, setScrollSync] = useState({ x: 0, y: 0 });
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [insertPosition, setInsertPosition] = useState<number | null>(null);
+  // Prefer external insert position (from dnd-kit drag) when provided
+  const effectiveInsertPosition = externalInsertPosition ?? insertPosition;
   // Keep the track labels vertically aligned with tracks when a horizontal
   // scrollbar appears in the tracks viewport (e.g. on Windows where scrollbars take space).
   // We measure the horizontal scrollbar height and add equivalent bottom padding to the
@@ -109,6 +120,21 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
     // Only update when changed to avoid re-renders while scrolling
     setHScrollbar((prev) => (prev !== horiz ? horiz : prev));
   }, []);
+
+  // Compute preview item height to match actual item render sizing
+  const getPreviewItemHeight = useCallback((item: Item): number => {
+    // Waveform items (audio/video with waveform) are taller
+    const hasWaveform = (item.type === 'audio' || item.type === 'video') && (item as any).waveform;
+    // Video with waveform + thumbnail is slightly taller in actual renderer
+    let hasVideoWithThumbnail = false;
+    if (item.type === 'video' && hasWaveform && 'src' in item) {
+      const asset = assets.find((a) => a.src === (item as any).src);
+      hasVideoWithThumbnail = !!asset?.thumbnail;
+    }
+    if (hasVideoWithThumbnail) return 60;
+    if (hasWaveform) return 56;
+    return 44;
+  }, [assets]);
 
   // 同步垂直滚动（标签面板 ↔ 轨道视口）
   // Sync vertical scroll between labels and tracks; report horizontal scroll to parent.
@@ -195,7 +221,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
     e.preventDefault();
     setIsDraggingOver(false);
 
-    const currentInsertPosition = insertPosition;
+    const currentInsertPosition = effectiveInsertPosition;
     setInsertPosition(null);
 
     // 如果有插入位置，调用 handleInsertDrop
@@ -210,7 +236,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
     if (tracks.length === 0) {
       onEmptyDrop(e);
     }
-  }, [tracks.length, onEmptyDrop, insertPosition]);
+  }, [tracks.length, onEmptyDrop, effectiveInsertPosition]);
 
   // 检测鼠标是否在两个轨道之间
   const detectInsertPosition = useCallback((e: React.DragEvent) => {
@@ -559,10 +585,10 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
           }}
           onDrop={(e) => {
             // Handle drops when inserting between tracks or at the end
-            if (insertPosition !== null) {
+            if (effectiveInsertPosition !== null) {
               e.preventDefault();
               e.stopPropagation();
-              handleInsertDrop(e, insertPosition);
+              handleInsertDrop(e, effectiveInsertPosition);
               setInsertPosition(null);
             } else {
             }
@@ -570,7 +596,10 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
           onDragOver={(e) => {
             e.preventDefault();
             e.dataTransfer.dropEffect = 'copy'; // CRITICAL: Must match effectAllowed from drag source
-            detectInsertPosition(e);
+            // Only use internal detection when no external insert position is provided
+            if (externalInsertPosition == null) {
+              detectInsertPosition(e);
+            }
           }}
         >
           {tracks.length === 0 ? (
@@ -598,7 +627,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
             tracks.map((track, index) => (
               <Fragment key={track.id}>
                 {/* 插入指示器 - 轨道上方 */}
-                {insertPosition === index && (
+                {effectiveInsertPosition === index && (
                   <div
                     style={{
                       position: 'relative',
@@ -739,7 +768,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                   ))}
 
                   {/* 渲染预览影子（在目标位置） - dnd 拖动已有项时不显示 */}
-                  {dragPreview && dragPreview.previewTrackId === track.id && !window.currentDraggedItem && (
+                  {dragPreview && dragPreview.previewTrackId === track.id && externalInsertPosition == null && (
                     <div
                       style={{
                         position: 'absolute',
@@ -747,10 +776,10 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                         top: '50%',
                         transform: 'translateY(-50%)',
                         width: dragPreview.item.durationInFrames * pixelsPerFrame,
-                        height: 56, // 统一使用接近项高度的可视尺寸
+                        height: getPreviewItemHeight(dragPreview.item),
                         backgroundColor: 'rgba(255,255,255,0.55)',
                         border: '1px solid rgba(255,255,255,0.9)',
-                        borderRadius: 6,
+                        borderRadius: timeline.itemBorderRadius,
                         boxShadow: '0 2px 10px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(0,0,0,0.08)',
                         pointerEvents: 'none',
                         zIndex: 999,
@@ -762,7 +791,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                 </div>
 
                 {/* 插入指示器 - 最后一个轨道下方 */}
-                {insertPosition === tracks.length && index === tracks.length - 1 && (
+                {effectiveInsertPosition === tracks.length && index === tracks.length - 1 && (
                   <div
                     style={{
                       position: 'relative',
@@ -789,6 +818,23 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                 )}
               </Fragment>
             ))
+          )}
+
+          {/* 垂直吸附指示线（对齐到其他素材边缘时显示） */}
+          {dragPreview?.snapGuideFrame != null && (
+            <div
+              style={{
+                position: 'absolute',
+                left: dragPreview.snapGuideFrame * pixelsPerFrame,
+                top: 0,
+                bottom: 0,
+                width: 2,
+                backgroundColor: colors.accent.primary,
+                opacity: 0.9,
+                pointerEvents: 'none',
+                zIndex: 50,
+              }}
+            />
           )}
         </div>
       </div>
