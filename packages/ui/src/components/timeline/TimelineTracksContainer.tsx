@@ -98,11 +98,8 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
 
   const containerRef = useRef<HTMLDivElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
-  const gapRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const handleInsertDropRef = useRef<((e: React.DragEvent, position: number) => void) | null>(null);
-  const syncingRef = useRef(false); // Prevent circular scroll sync
-  const rafIdRef = useRef<number | null>(null); // For autoscroll animation
 
   const [scrollSync, setScrollSync] = useState({ x: 0, y: 0 });
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -139,48 +136,28 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
     return 44;
   }, [assets]);
 
-  // Sync from viewport (only true scroll source) to labels and gap
-  const syncFromViewport = useCallback(() => {
-    if (!viewportRef.current) return;
-    const top = viewportRef.current.scrollTop;
-    syncingRef.current = true;
-    if (labelsRef.current) labelsRef.current.scrollTop = top;
-    if (gapRef.current) gapRef.current.scrollTop = top;
-    syncingRef.current = false;
-  }, []);
-
-  // 同步垂直滚动（标签面板 ↔ gap ↔ 轨道视口）
-  // Sync vertical scroll between labels, gap, and tracks; report horizontal scroll to parent.
-  // Also enforce hard boundary to prevent scrolling beyond actual tracks content.
+  // 同步垂直滚动（标签面板 ↔ 轨道视口）
+  // Sync vertical scroll between labels and tracks; report horizontal scroll to parent.
   const handleViewportScroll = useCallback(() => {
-    if (viewportRef.current) {
-      const vp = viewportRef.current;
-
-      // Calculate hard boundary: don't scroll beyond actual tracks content
-      const maxScrollTop = Math.max(0, tracks.length * timeline.trackHeight - vp.clientHeight);
-
-      // Clamp scroll position to valid range
-      if (vp.scrollTop > maxScrollTop) {
-        vp.scrollTop = maxScrollTop;
-        return; // Don't sync if we just clamped
-      }
-
-      syncFromViewport();
-      setScrollSync(prev => ({ ...prev, y: vp.scrollTop }));
+    if (viewportRef.current && labelsRef.current) {
+      const scrollTop = viewportRef.current.scrollTop;
+      labelsRef.current.scrollTop = scrollTop;
+      setScrollSync(prev => ({ ...prev, y: scrollTop }));
 
       // Sync horizontal scroll to consumers (ruler, playhead, etc.)
-      const scrollLeft = vp.scrollLeft;
+      const scrollLeft = viewportRef.current.scrollLeft;
       setScrollSync(prev => ({ ...prev, x: scrollLeft }));
       onScrollXChange?.(scrollLeft);
       // Re-measure in case scrollbar visibility changed while scrolling
       measureScrollbars();
     }
-  }, [onScrollXChange, measureScrollbars, syncFromViewport, tracks.length]);
+  }, [onScrollXChange, measureScrollbars]);
 
-  // Optional: if labels scroll detected (e.g. user wheel over labels), drive viewport
   const handleLabelsScroll = useCallback(() => {
-    if (!syncingRef.current && labelsRef.current && viewportRef.current) {
-      viewportRef.current.scrollTop = labelsRef.current.scrollTop;
+    if (labelsRef.current && viewportRef.current) {
+      const scrollTop = labelsRef.current.scrollTop;
+      viewportRef.current.scrollTop = scrollTop;
+      setScrollSync(prev => ({ ...prev, y: scrollTop }));
     }
   }, []);
 
@@ -191,58 +168,6 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, [measureScrollbars, durationInFrames, pixelsPerFrame, viewportWidth]);
-
-  // #4 Prevent scroll bubbling to window during drag
-  useEffect(() => {
-    if (!isDraggingOver) return;
-    const root = document.documentElement;
-    const body = document.body;
-    const prevDoc = root.style.overscrollBehavior;
-    const prevBody = body.style.overscrollBehavior;
-    root.style.overscrollBehavior = 'contain';
-    body.style.overscrollBehavior = 'contain';
-    return () => {
-      root.style.overscrollBehavior = prevDoc;
-      body.style.overscrollBehavior = prevBody;
-    };
-  }, [isDraggingOver]);
-
-  // #5 Custom edge autoscroll - only scrolls viewport, not other containers
-  // Also enforces hard boundary: max scroll = tracks.length * trackHeight
-  const autoScrollOnEdge = useCallback((e: React.DragEvent) => {
-    if (!viewportRef.current) return;
-    const vp = viewportRef.current;
-    const rect = vp.getBoundingClientRect();
-    const y = e.clientY;
-
-    const AUTO_SCROLL_MARGIN = 32;
-    const MAX_STEP = 32;
-
-    // Calculate hard boundary: don't scroll beyond actual tracks content
-    const maxScrollTop = Math.max(0, tracks.length * timeline.trackHeight - vp.clientHeight);
-
-    let delta = 0;
-    if (y < rect.top + AUTO_SCROLL_MARGIN) {
-      delta = -Math.min(MAX_STEP, rect.top + AUTO_SCROLL_MARGIN - y);
-    } else if (y > rect.bottom - AUTO_SCROLL_MARGIN) {
-      // Only scroll down if not at hard boundary
-      if (vp.scrollTop < maxScrollTop) {
-        delta = Math.min(MAX_STEP, y - (rect.bottom - AUTO_SCROLL_MARGIN));
-      }
-    }
-
-    if (delta !== 0) {
-      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
-      rafIdRef.current = requestAnimationFrame(() => {
-        // Clamp to [0, maxScrollTop]
-        const next = Math.max(0, Math.min(vp.scrollTop + delta, maxScrollTop));
-        if (next !== vp.scrollTop) {
-          vp.scrollTop = next;
-          syncFromViewport(); // Keep all columns synced
-        }
-      });
-    }
-  }, [syncFromViewport, tracks.length]);
 
   // 拖放处理
   const handleContainerDragEnter = useCallback((e: React.DragEvent) => {
@@ -528,8 +453,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
     e.dataTransfer.dropEffect = 'copy'; // CRITICAL: Must match effectAllowed from drag source
     onDragOver(e);
     detectInsertPosition(e);
-    autoScrollOnEdge(e); // Custom controlled autoscroll
-  }, [onDragOver, detectInsertPosition, autoScrollOnEdge]);
+  }, [onDragOver, detectInsertPosition]);
 
   // Keep content at least as wide as the viewport to avoid empty scroll area on empty timeline
   const totalWidth = Math.max(durationInFrames * pixelsPerFrame, viewportWidth ?? 0);
@@ -544,12 +468,16 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
         overflow: 'hidden',
         background: isDraggingOver ? colors.bg.hover : colors.bg.primary,
         borderRadius: 4,
-        margin: 0,
+        margin: `${spacing.xs}px`,
+        marginTop: 0, // sit flush under ruler to avoid double separator
+        marginLeft: 0, // keep left perfectly aligned with ruler
         boxShadow: shadows.sm,
-        border: 0,
+        // Avoid mixing border shorthand with borderLeft to prevent React warning.
+        borderTop: `1px solid ${isDraggingOver ? colors.accent.primary : colors.border.default}`,
+        borderRight: `1px solid ${isDraggingOver ? colors.accent.primary : colors.border.default}`,
+        borderBottom: `1px solid ${isDraggingOver ? colors.accent.primary : colors.border.default}`,
+        borderLeft: 0,
         position: 'relative',
-        // #2 Lock outer container height - prevents infinite growth
-        height: 480, // Fixed height or could use timeline.height if defined
       }}
       onDragEnter={handleContainerDragEnter}
       onDragLeave={handleContainerDragLeave}
@@ -565,14 +493,12 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
             width: timeline.trackLabelWidth,
             flexShrink: 0,
             background: colors.bg.secondary,
-            borderRight: 0,
-            // #1 Only viewport can scroll vertically, labels are synced via JS
-            height: '100%',
-            overflowY: 'hidden',
+            borderRight: `1px solid ${colors.border.default}`,
+            overflowY: 'auto',
             overflowX: 'hidden',
-            position: 'relative',
-            zIndex: 10,
-            marginRight: -(spacing.lg - 1),
+            position: 'sticky',
+            left: 0,
+            zIndex: 30,
             // Reserve space equal to the horizontal scrollbar in the tracks viewport
             // so the last row aligns when scrolled to bottom (esp. on Windows).
             paddingBottom: hScrollbar,
@@ -636,56 +562,17 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
         </div>
       )}
 
-      {/* Gap div - 分隔左右面板 */}
-      <div
-        ref={gapRef}
-        className="timeline-gap"
-        style={{
-          width: spacing.lg,
-          flexShrink: 0,
-          background: 'transparent',
-          position: 'relative',
-          // #1 Only viewport can scroll vertically, gap is synced via JS
-          height: '100%',
-          overflowY: 'hidden',
-          overflowX: 'hidden',
-          zIndex: 1,
-          // 隐藏滚动条但保持可滚动
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
-          pointerEvents: 'none',
-        }}
-      >
-        <style>{`
-          .timeline-gap::-webkit-scrollbar { display: none; }
-        `}</style>
-        {/* 内容容器 - 撑开高度以允许滚动 */}
-        <div
-          style={{
-            position: 'relative',
-            // #3 Don't use track height to push layout, just fill container
-            minHeight: '100%',
-            paddingBottom: hScrollbar,
-          }}
-        />
-      </div>
-
       {/* 右侧轨道视口 */}
       <div
         ref={viewportRef}
         className="tracks-viewport"
         style={{
           flex: 1,
-          // #2 Fill container height, be the only vertical scroll ancestor
-          height: '100%',
           overflowX: 'auto',
           overflowY: 'auto',
           position: 'relative',
           minWidth: 0,
           paddingLeft: contentInsetLeftPx ?? 0,
-          zIndex: 10,
-          marginLeft: -(spacing.lg - 1),
-          overscrollBehavior: 'contain',
         }}
         onScroll={handleViewportScroll}
         onDragOver={handleTrackAreaDragOver}
@@ -770,7 +657,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                 <div
                   style={{
                     height: timeline.trackHeight,
-                    borderBottom: `1px solid transparent`,
+                    borderBottom: `1px solid ${colors.border.default}`,
                     position: 'relative',
                     backgroundColor: selectedTrackId === track.id ? colors.bg.selected : 'transparent',
                   }}
@@ -1000,9 +887,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
           flexShrink: 0,
           background: colors.bg.secondary,
           borderRight: `1px solid ${colors.border.default}`,
-          // #1 Only viewport can scroll vertically, labels are synced via JS
-          height: '100%',
-          overflowY: 'hidden',
+          overflowY: 'auto',
           overflowX: 'hidden',
           position: 'sticky',
           left: 0,
@@ -1010,6 +895,7 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
           paddingBottom: hScrollbar,
           scrollbarWidth: 'none',
           msOverflowStyle: 'none',
+          height: '100%',
         }}
         onScroll={handleLabelsScroll}
       >

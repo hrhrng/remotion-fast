@@ -727,8 +727,7 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
         width: width,
         height: `${itemHeight}px`,
         top: '50%',
-        // 不再使用 transform 移动，拖拽时隐藏原元素，让 DragOverlay 显示
-        transform: `translateY(-50%)`,
+        transform: `${transform ? DndCSS.Transform.toString(transform) : ''} translateY(-50%)`,
         backgroundColor: getColor(),
         borderRadius: '4px',
         border: isSelected
@@ -742,11 +741,10 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
         backgroundSize: useNewRenderer ? 'cover' : (item.type === 'image' ? 'contain' : (isDynamicReady ? 'auto 100%' : 'cover')),
         backgroundPosition: 'left top',
         backgroundRepeat: 'no-repeat',
-        // 拖拽时隐藏原元素，让 DragOverlay 显示副本
-        opacity: isDragging ? 0 : (track.hidden ? 0.3 : 1),
+        opacity: (track.hidden ? 0.3 : 1),
         outline: isDragging ? '1px dashed rgba(0, 153, 255, 0.8)' : 'none',
         zIndex: isDragging ? 1000 : undefined,
-        willChange: isDragging ? 'opacity' : undefined,
+        willChange: isDragging ? 'transform' : undefined,
         ...customStyle, // 应用自定义样式（可以覆盖默认样式，如opacity）
       }}
     >
