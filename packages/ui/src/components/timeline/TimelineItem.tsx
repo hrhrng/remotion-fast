@@ -43,6 +43,12 @@ interface TimelineItemProps {
   onDragEnd?: (e: React.DragEvent) => void;
   onResizeStart?: (edge: 'left' | 'right') => void;
   onResize?: (edge: 'left' | 'right', deltaFrames: number) => void;
+  onRollEdit?: (edge: 'left' | 'right', deltaFrames: number) => void; // Roll edit with adjacent item
+  hasAdjacentItemOnLeft?: boolean;
+  hasAdjacentItemOnRight?: boolean;
+  shouldHighlightLeft?: boolean;
+  shouldHighlightRight?: boolean;
+  onHoverChange?: (isHovered: boolean) => void;
   onResizeEnd?: () => void;
   style?: CSSProperties;
   // DragOverlay mode: disable positioning, let DragOverlay handle it
@@ -64,6 +70,12 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
   onResizeStart,
   onResize,
   onResizeEnd,
+  onRollEdit,
+  hasAdjacentItemOnLeft,
+  hasAdjacentItemOnRight,
+  shouldHighlightLeft = false,
+  shouldHighlightRight = false,
+  onHoverChange,
   style: customStyle,
   isDragOverlay = false,
 }) => {
@@ -194,9 +206,9 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
         const frameHeight = BASE_HEIGHT;
         const frameWidth = Math.max(1, Math.floor((video.videoWidth / video.videoHeight) * frameHeight));
 
-        // 设定最大缓存帧数，并将画布做成网格，避免超大宽度
-        const MAX_CACHE_FRAMES = 360; // 例如每秒6帧*60秒
-        const sampleCount = Math.min(MAX_CACHE_FRAMES, totalFrames);
+        // 固定采样数量 - 减少以提升速度
+        const SAMPLE_COUNT = 40;
+        const sampleCount = Math.min(SAMPLE_COUNT, totalFrames);
         const framesPerRow = 60; // 网格每行放置帧数，控制宽度
         const rows = Math.ceil(sampleCount / framesPerRow);
 
@@ -266,7 +278,7 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
           colToIdx[col] = Math.min(entry.sampleCount - 1, Math.max(0, Math.round(ratio * (entry.sampleCount - 1))));
         }
 
-        const BATCH = 8;
+        const BATCH = 64; // 增加批处理大小,加快绘制速度
         let col = 0;
         const step = () => {
           const end = Math.min(columns, col + BATCH);
@@ -337,19 +349,20 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
   }, [asset?.duration, item, pixelsPerFrame, thumbnailHeight, itemHeight, hasWaveform]);
 
   // 在以下情况触发绘制：
-  // 1. 素材首次拖入 timeline (justInserted)
-  // 2. zoom 级别变化（需要更多或更少的帧样本）
+  // 1. 素材首次拖入 timeline (justInserted) - 采样 + 绘制
+  // 2. zoom 级别显著变化 - 仅重绘（从缓存的 filmstrip 中取样，不重新采样视频）
   // 注意：trim 和移动操作只改变 CSS transform，不触发重绘
   const didInitRef = React.useRef(false);
   const pendingClearInsertFlagRef = React.useRef(false);
   const lastZoomLevelRef = React.useRef<number>(pixelsPerFrame);
+  const redrawTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   React.useEffect(() => {
     if (!didInitRef.current) {
       didInitRef.current = true;
       lastZoomLevelRef.current = pixelsPerFrame;
 
-      // 对于视频类型，如果有 justInserted 标记，初始绘制
+      // 对于视频类型，如果有 justInserted 标记，初始绘制（采样 + 绘制）
       if (item.type === 'video' && asset?.duration) {
         if ((item as any).justInserted) {
           pendingClearInsertFlagRef.current = true;
@@ -359,12 +372,26 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
       return;
     }
 
-    // 只有 zoom 级别显著变化时才重绘
+    // zoom 级别变化时，立即重绘（无防抖）
+    // 因为只是从缓存 filmstrip 中重新采样绘制，很快，不需要防抖
     const zoomChanged = Math.abs(pixelsPerFrame - lastZoomLevelRef.current) > 0.01;
-    if (zoomChanged) {
+    if (zoomChanged && item.type === 'video' && asset?.duration) {
       lastZoomLevelRef.current = pixelsPerFrame;
+
+      // 清除之前的定时器
+      if (redrawTimeoutRef.current) {
+        clearTimeout(redrawTimeoutRef.current);
+      }
+
+      // 立即重绘（从缓存绘制，不重新采样）
       generateDynamicThumbnail();
     }
+
+    return () => {
+      if (redrawTimeoutRef.current) {
+        clearTimeout(redrawTimeoutRef.current);
+      }
+    };
   }, [
     pixelsPerFrame,
     generateDynamicThumbnail,
@@ -659,7 +686,7 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
 
   // Handle resize
   const handleResizeMouseDown = useCallback(
-    (edge: 'left' | 'right', e: React.MouseEvent) => {
+    (edge: 'left' | 'right', e: React.MouseEvent, isRollEdit = false) => {
       e.stopPropagation();
       e.preventDefault();
 
@@ -676,7 +703,13 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
       const handleMouseMove = (moveEvent: MouseEvent) => {
         const deltaX = moveEvent.clientX - startX;
         const deltaFrames = Math.round(deltaX / pixelsPerFrame);
-        onResize?.(edge, deltaFrames);
+
+        // Roll Edit 模式使用 onRollEdit，普通模式使用 onResize
+        if (isRollEdit && onRollEdit) {
+          onRollEdit(edge, deltaFrames);
+        } else {
+          onResize?.(edge, deltaFrames);
+        }
 
         // Auto-scroll horizontally if cursor nears viewport edges
         if (viewportEl) {
@@ -704,7 +737,7 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     },
-    [pixelsPerFrame, onResizeStart, onResize, onResizeEnd]
+    [pixelsPerFrame, onResizeStart, onResize, onResizeEnd, onRollEdit]
   );
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -746,11 +779,16 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
       // dnd-kit takes over dragging; disable native dragging to avoid conflicts
       draggable={false}
       ref={setNodeRef}
-      {...listeners}
       {...attributes}
       data-dnd-id={`item-${item.id}`}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      onMouseEnter={() => {
+        setIsHovered(true);
+        onHoverChange?.(true);
+      }}
+      onMouseLeave={() => {
+        setIsHovered(false);
+        onHoverChange?.(false);
+      }}
       onClick={handleClick}
       onDoubleClick={handleTextEdit}
       style={{
@@ -766,40 +804,71 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
           ? `${borderSize}px solid #ffffff`
           : `${borderSize}px solid rgba(0,0,0,0.2)`,
         cursor: 'move',
-        overflow: 'hidden',
+        overflow: 'visible', // 改为 visible,让 resize handles 可以延伸出去
         boxSizing: 'border-box',
-        backgroundImage: (useNewRenderer || hasWaveform || item.type === 'audio') ? 'none' : (displayThumbnail ? `url(${displayThumbnail})` : 'none'),
-        // Dynamic ready -> 'auto 100%'; fallback poster -> 'cover' to fill width immediately	        backgroundSize: useNewRenderer ? 'cover' : (isDynamicReady ? 'auto 100%' : 'cover'),
-
-backgroundPosition: 'left top',
-        backgroundRepeat: 'no-repeat',
         opacity: isDragging ? 0 : (track.hidden ? 0.3 : 1),
         outline: isDragging ? '1px dashed rgba(0, 153, 255, 0.8)' : 'none',
         ...customStyle, // 应用自定义样式（可以覆盖默认样式，如opacity）
       }}
     >
-      {/* New renderer (image/text) */}
-      {useNewRenderer && (
-        <div style={{ position: 'absolute', inset: 0 }}>
-          <Renderer item={item} asset={asset} width={width} height={itemHeight} pixelsPerFrame={pixelsPerFrame} />
-        </div>
-      )}
-      {/* Thumbnail for video with waveform */}
-      {item.type === 'video' && hasWaveform && (
-        <div
-          data-thumbnail-id={item.id}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: `${thumbnailHeight}px`,
-            pointerEvents: 'none',
-            zIndex: 1,
-            overflow: 'hidden',
-            backgroundColor: '#000',
-          }}
-        >
+      {/* 内层可拖动区域 - 排除 resize handles,让它们可以独立工作 */}
+      <div
+        {...listeners}
+        style={{
+          position: 'absolute',
+          inset: '0 6px 0 6px', // 左右各留出 6px,因为 handles 向外延伸
+          cursor: 'move',
+          zIndex: 5,
+          pointerEvents: 'auto', // 确保可以捕获拖动事件
+        }}
+      />
+
+      {/* 内容裁剪容器 - 防止内容溢出到 resize handles */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          overflow: 'hidden',
+          pointerEvents: 'none', // 让事件穿透到内层元素
+          borderRadius: '4px',
+        }}
+      >
+        {/* 背景图片(非视频类型) */}
+        {!useNewRenderer && item.type !== 'video' && item.type !== 'audio' && displayThumbnail && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              backgroundImage: `url(${displayThumbnail})`,
+              backgroundSize: isDynamicReady ? 'auto 100%' : 'cover',
+              backgroundPosition: 'left top',
+              backgroundRepeat: 'no-repeat',
+            }}
+          />
+        )}
+
+        {/* New renderer (image/text) */}
+        {useNewRenderer && (
+          <div style={{ position: 'absolute', inset: 0 }}>
+            <Renderer item={item} asset={asset} width={width} height={itemHeight} pixelsPerFrame={pixelsPerFrame} />
+          </div>
+        )}
+
+        {/* Thumbnail for video (with or without waveform) */}
+        {item.type === 'video' && (
+          <div
+            data-thumbnail-id={item.id}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: hasWaveform ? `${thumbnailHeight}px` : '100%',
+              zIndex: 1,
+              overflow: 'hidden',
+              backgroundColor: '#000',
+            }}
+          >
           <div
             style={{
               position: 'absolute',
@@ -880,6 +949,8 @@ backgroundPosition: 'left top',
           })()}
         </div>
       )}
+      </div>
+      {/* 内容裁剪容器结束 */}
 
       {/* Fade curves */}
       {hasWaveform && isSelected && (
@@ -1048,32 +1119,63 @@ backgroundPosition: 'left top',
       )}
 
       {/* Resize handles */}
-      {isHovered && (
+      {/* Roll Edit 模式：hover 时且相邻时，显示高亮手柄 */}
+      {/* 普通模式：hover 时显示手柄 */}
+      {/* 联动显示：相邻 item hover 时也显示 */}
+      {(isHovered || shouldHighlightLeft || shouldHighlightRight) && (
         <>
+          {/* 左边缘手柄 - 向左延伸,覆盖边界 */}
           <div
-            onMouseDown={(e) => handleResizeMouseDown('left', e)}
+            onMouseDown={(e) => {
+              e.stopPropagation(); // 阻止事件冒泡,防止触发 dnd-kit 拖动
+              if (hasAdjacentItemOnLeft && onRollEdit) {
+                // Roll Edit 模式
+                handleResizeMouseDown('left', e, true);
+              } else {
+                // 普通 trim 模式
+                handleResizeMouseDown('left', e);
+              }
+            }}
+            onPointerDown={(e) => e.stopPropagation()} // 阻止 dnd-kit 的 pointer 事件
             style={{
               position: 'absolute',
-              left: 0,
+              left: -6,  // 向左延伸 6px,覆盖边界
               top: 0,
               bottom: 0,
-              width: 8,
+              width: 12,
               cursor: 'ew-resize',
-              zIndex: 4,
-              backgroundColor: resizingEdge === 'left' ? 'rgba(0, 102, 255, 0.3)' : 'transparent',
+              zIndex: 10,
+              backgroundColor: shouldHighlightLeft
+                ? 'rgba(255, 165, 0, 0.6)'  // Roll Edit: 橙色高亮
+                : resizingEdge === 'left' ? 'rgba(0, 102, 255, 0.3)' : 'transparent',
+              touchAction: 'none', // 防止触摸事件干扰
             }}
           />
+          {/* 右边缘手柄 - 向右延伸,覆盖边界 */}
           <div
-            onMouseDown={(e) => handleResizeMouseDown('right', e)}
+            onMouseDown={(e) => {
+              e.stopPropagation(); // 阻止事件冒泡,防止触发 dnd-kit 拖动
+              if (hasAdjacentItemOnRight && onRollEdit) {
+                // Roll Edit 模式
+                handleResizeMouseDown('right', e, true);
+              } else {
+                // 普通 trim 模式
+                handleResizeMouseDown('right', e);
+              }
+            }}
+            onPointerDown={(e) => e.stopPropagation()} // 阻止 dnd-kit 的 pointer 事件
             style={{
               position: 'absolute',
-              right: 0,
+              right: -6,  // 向右延伸 6px,覆盖边界
               top: 0,
               bottom: 0,
-              width: 8,
+              width: 12,
               cursor: 'ew-resize',
-              zIndex: 4,
-              backgroundColor: resizingEdge === 'right' ? 'rgba(0, 102, 255, 0.3)' : 'transparent',
+              zIndex: 10,
+              backgroundColor: shouldHighlightRight
+                ? 'rgba(255, 165, 0, 0.6)'  // Roll Edit: 橙色高亮
+                : resizingEdge === 'right' ? 'rgba(0, 102, 255, 0.3)' : 'transparent',
+              touchAction: 'none', // 防止触摸事件干扰
             }}
           />
         </>

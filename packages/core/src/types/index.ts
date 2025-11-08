@@ -1,8 +1,20 @@
+// Properties for positioning and transforming items on canvas
+export type ItemProperties = {
+  x: number; // X position on canvas (0-1, relative to canvas width)
+  y: number; // Y position on canvas (0-1, relative to canvas height)
+  width: number; // Width scale (0-1, relative to canvas width)
+  height: number; // Height scale (0-1, relative to canvas height)
+  rotation?: number; // Rotation in degrees
+  opacity?: number; // Opacity (0-1)
+  zIndex?: number; // Z-index for layering
+};
+
 // Base types for timeline items
 export type BaseItem = {
   id: string;
   from: number; // Start frame
   durationInFrames: number;
+  properties?: ItemProperties; // Canvas positioning and transform properties
 };
 
 // Different item types

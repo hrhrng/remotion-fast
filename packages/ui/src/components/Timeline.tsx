@@ -53,6 +53,7 @@ export const Timeline: React.FC = () => {
   const [dragOffset, setDragOffset] = useState<number>(0); // 鼠标相对于素材左边缘的偏移量（像素）
   const [assetDragOffset, setAssetDragOffset] = useState<number>(0); // asset 拖动时的偏移量
   const lastDragTopRef = useRef<number | null>(null);
+  const previousContentEndRef = useRef<number>(0); // 记录上次的内容结束位置
 
   // 拖动预览状态：存储预期的落点位置（snap后的）
   const [dragPreview, setDragPreview] = useState<{
@@ -341,17 +342,81 @@ export const Timeline: React.FC = () => {
   // no extra alignment
 
   // ==================== 缩放控制 ====================
-  const handleZoomIn = useCallback(() => {
-    if (zoom < timelineStyles.zoomMax) {
-      dispatch({ type: 'SET_ZOOM', payload: Math.min(zoom + 0.25, timelineStyles.zoomMax) });
+  // Adaptive zoom step: use smaller increments at lower zoom levels for better control
+  const getAdaptiveZoomStep = useCallback((currentZoom: number): number => {
+    if (currentZoom < 0.5) return 0.1;
+    if (currentZoom < 1) return 0.15;
+    if (currentZoom < 2) return 0.25;
+    if (currentZoom < 4) return 0.5;
+    return 1;
+  }, []);
+
+  // Calculate zoom level needed to fit all content in viewport
+  const calculateFitZoom = useCallback(() => {
+    if (contentEndInFrames === 0 || viewportContentWidth === 0) return timelineStyles.zoomDefault;
+
+    // Calculate pixels per frame needed to fit content in viewport
+    const neededPixelsPerFrame = viewportContentWidth / (contentEndInFrames * 1.1); // 1.1x for padding
+    // Convert to zoom multiplier (base is 2px per frame at zoom=1)
+    const fitZoom = neededPixelsPerFrame / 2;
+
+    // Clamp between min and max
+    return Math.max(timelineStyles.zoomMin, Math.min(timelineStyles.zoomMax, fitZoom));
+  }, [contentEndInFrames, viewportContentWidth]);
+
+  // Smart zoom limits based on content
+  const getSmartZoomLimits = useCallback(() => {
+    if (contentEndInFrames === 0) {
+      return { min: timelineStyles.zoomMin, max: timelineStyles.zoomMax };
     }
-  }, [zoom, dispatch]);
+
+    // Calculate minimum zoom that prevents timeline from being too small
+    const minPxWidth = 200; // minimum timeline width
+    const minZoom = Math.max(timelineStyles.zoomMin, minPxWidth / (contentEndInFrames * 2));
+
+    // Calculate maximum zoom that prevents excessive horizontal scrolling
+    const maxFramesVisible = 300; // reasonable viewport size in frames
+    const maxZoom = Math.min(timelineStyles.zoomMax, (viewportContentWidth / maxFramesVisible) / 2);
+
+    return {
+      min: Math.max(timelineStyles.zoomMin, minZoom),
+      max: Math.max(minZoom, maxZoom)
+    };
+  }, [contentEndInFrames, viewportContentWidth]);
+
+  const handleZoomIn = useCallback(() => {
+    const limits = getSmartZoomLimits();
+    const step = getAdaptiveZoomStep(zoom);
+    if (zoom < limits.max) {
+      const newZoom = Math.min(zoom + step, limits.max);
+      dispatch({ type: 'SET_ZOOM', payload: newZoom });
+    }
+  }, [zoom, dispatch, getSmartZoomLimits, getAdaptiveZoomStep]);
 
   const handleZoomOut = useCallback(() => {
-    if (zoom > timelineStyles.zoomMin) {
-      dispatch({ type: 'SET_ZOOM', payload: Math.max(zoom - 0.25, timelineStyles.zoomMin) });
+    const limits = getSmartZoomLimits();
+    const step = getAdaptiveZoomStep(zoom);
+    if (zoom > limits.min) {
+      const newZoom = Math.max(zoom - step, limits.min);
+      dispatch({ type: 'SET_ZOOM', payload: newZoom });
     }
-  }, [zoom, dispatch]);
+  }, [zoom, dispatch, getSmartZoomLimits, getAdaptiveZoomStep]);
+
+  // Zoom to fit all content
+  const handleZoomToFit = useCallback(() => {
+    const fitZoom = calculateFitZoom();
+    dispatch({ type: 'SET_ZOOM', payload: fitZoom });
+  }, [dispatch, calculateFitZoom]);
+
+  // Reset zoom to default
+  const handleZoomReset = useCallback(() => {
+    dispatch({ type: 'SET_ZOOM', payload: timelineStyles.zoomDefault });
+  }, [dispatch]);
+
+  // Handle zoom change from slider
+  const handleZoomChange = useCallback((newZoom: number) => {
+    dispatch({ type: 'SET_ZOOM', payload: newZoom });
+  }, [dispatch]);
 
   // ==================== 播放头控制 ====================
   const handleSeek = useCallback(
@@ -1012,7 +1077,11 @@ export const Timeline: React.FC = () => {
         snapEnabled={snapEnabled}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
+        onZoomToFit={handleZoomToFit}
+        onZoomReset={handleZoomReset}
         onToggleSnap={() => setSnapEnabled(!snapEnabled)}
+        onZoomChange={handleZoomChange}
+        zoomLimits={getSmartZoomLimits()}
       />
 
       {/* 工作区域：两列布局（左：标签列；右：标尺+轨道） */}

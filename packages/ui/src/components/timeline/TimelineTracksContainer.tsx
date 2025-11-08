@@ -104,6 +104,9 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
   const { state, dispatch } = useEditor();
   const { tracks } = state;
 
+  // Track which item is being hovered for roll edit highlighting
+  const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
+
   // Debug: log when assetDragPreview changes
   useEffect(() => {
     console.log('[TimelineTracksContainer] assetDragPreview updated:', assetDragPreview);
@@ -550,6 +553,13 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
       onDragLeave={handleContainerDragLeave}
       onDragOver={handleContainerDragOver}
       onDrop={handleContainerDrop}
+      onClick={(e) => {
+        // 点击 timeline 空白区域时取消选中 item
+        // 只在点击的是最外层容器自身时才取消选中(不是子元素冒泡上来的)
+        if (e.target === e.currentTarget) {
+          onSelectItem('');
+        }
+      }}
     >
       {/* 左侧标签面板（若提供 labelsPortal 则不内联渲染） */}
       {!labelsPortal && (
@@ -650,6 +660,12 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
             minWidth: totalWidth,
             minHeight: '100%',
           }}
+          onClick={(e) => {
+            // 点击轨道视口的空白区域时取消选中
+            if (e.target === e.currentTarget) {
+              onSelectItem('');
+            }
+          }}
           onDrop={(e) => {
             // Handle drops when inserting between tracks or at the end
             if (effectiveInsertPosition !== null) {
@@ -729,7 +745,13 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                     position: 'relative',
                     backgroundColor: selectedTrackId === track.id ? colors.bg.selected : 'transparent',
                   }}
-                  onClick={() => onSelectTrack(track.id)}
+                  onClick={(e) => {
+                    // 点击轨道空白区域时取消选中 item
+                    if (e.target === e.currentTarget) {
+                      onSelectTrack(track.id);
+                      onSelectItem(''); // 传空字符串取消选中
+                    }
+                  }}
                   onDragOver={(e) => {
                     // 检测插入位置
                     const insertPos = detectInsertPosition(e);
@@ -764,8 +786,25 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                   }}
                 >
                   {/* 使用 TimelineItem 组件保留所有功能 */}
-                  {track.items.map((item) => (
-                    <TimelineItem
+                  {track.items.map((item, itemIndex) => {
+                    // 检测相邻的 item（用于 Roll Edit）
+                    const sortedItems = [...track.items].sort((a, b) => a.from - b.from);
+                    const currentIndex = sortedItems.findIndex(i => i.id === item.id);
+                    const leftItem = currentIndex > 0 ? sortedItems[currentIndex - 1] : null;
+                    const rightItem = currentIndex < sortedItems.length - 1 ? sortedItems[currentIndex + 1] : null;
+
+                    const hasAdjacentLeft = leftItem && (leftItem.from + leftItem.durationInFrames === item.from);
+                    const hasAdjacentRight = rightItem && (item.from + item.durationInFrames === rightItem.from);
+
+                    // Roll Edit 模式：当两个 item 相邻且都未选中时启用
+                    const isInRollEditLeft = hasAdjacentLeft && selectedItemId !== item.id && selectedItemId !== leftItem.id;
+                    const isInRollEditRight = hasAdjacentRight && selectedItemId !== item.id && selectedItemId !== rightItem.id;
+
+                    // 检测是否应该显示高亮：自己被 hover 或相邻的 item 被 hover
+                    const shouldHighlightLeft = isInRollEditLeft && (hoveredItemId === item.id || hoveredItemId === leftItem?.id);
+                    const shouldHighlightRight = isInRollEditRight && (hoveredItemId === item.id || hoveredItemId === rightItem?.id);
+
+                    return (<TimelineItem
                       key={item.id}
                       item={item}
                       trackId={track.id}
@@ -778,6 +817,11 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                       onUpdate={(itemId, updates) => onUpdateItem(track.id, itemId, updates)}
                       onDragStart={(e) => onItemDragStart(e, track.id, item)}
                       onDragEnd={onItemDragEnd}
+                      hasAdjacentItemOnLeft={isInRollEditLeft}
+                      hasAdjacentItemOnRight={isInRollEditRight}
+                      shouldHighlightLeft={shouldHighlightLeft}
+                      shouldHighlightRight={shouldHighlightRight}
+                      onHoverChange={(isHovered) => setHoveredItemId(isHovered ? item.id : null)}
                       onResize={(edge, deltaFrames) => {
                         // 获取素材总帧数
                         let totalFramesForAsset: number | undefined;
@@ -880,8 +924,63 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                           } as any);
                         }
                       }}
+                      onRollEdit={(edge, deltaFrames) => {
+                        // Roll Edit: 同时调整当前 item 和相邻 item，总时长不变
+                        if (edge === 'left' && isInRollEditLeft && leftItem) {
+                          // 左边缘 Roll Edit
+                          // 当前 item: from 减少，duration 增加，sourceStartInFrames 减少
+                          // 左侧 item: duration 减少
+
+                          const currentOffset = (item as any).sourceStartInFrames || 0;
+                          const newCurrentFrom = Math.max(0, item.from + deltaFrames);
+                          const currentDeltaFrames = newCurrentFrom - item.from; // 负数表示向左
+
+                          // 计算新的源偏移
+                          const newCurrentOffset = Math.max(0, currentOffset + currentDeltaFrames);
+                          const newCurrentDuration = item.durationInFrames - currentDeltaFrames;
+
+                          // 左侧 item 的时长相应减少
+                          const newLeftDuration = Math.max(15, leftItem.durationInFrames + currentDeltaFrames);
+
+                          // 同时更新两个 item
+                          onUpdateItem(track.id, item.id, {
+                            from: newCurrentFrom,
+                            durationInFrames: newCurrentDuration,
+                            ...(item.type === 'video' || item.type === 'audio' ? { sourceStartInFrames: newCurrentOffset } : {}),
+                          } as any);
+
+                          onUpdateItem(track.id, leftItem.id, {
+                            durationInFrames: newLeftDuration,
+                          } as any);
+
+                        } else if (edge === 'right' && isInRollEditRight && rightItem) {
+                          // 右边缘 Roll Edit
+                          // 当前 item: duration 变化
+                          // 右侧 item: from 变化，duration 反向变化，sourceStartInFrames 变化
+
+                          const rawNewDuration = Math.max(15, item.durationInFrames + deltaFrames);
+                          const actualDelta = rawNewDuration - item.durationInFrames;
+
+                          const rightOffset = (rightItem as any).sourceStartInFrames || 0;
+                          const newRightFrom = rightItem.from + actualDelta;
+                          const newRightOffset = Math.max(0, rightOffset + actualDelta);
+                          const newRightDuration = Math.max(15, rightItem.durationInFrames - actualDelta);
+
+                          // 同时更新两个 item
+                          onUpdateItem(track.id, item.id, {
+                            durationInFrames: rawNewDuration,
+                          } as any);
+
+                          onUpdateItem(track.id, rightItem.id, {
+                            from: newRightFrom,
+                            durationInFrames: newRightDuration,
+                            ...(rightItem.type === 'video' || rightItem.type === 'audio' ? { sourceStartInFrames: newRightOffset } : {}),
+                          } as any);
+                        }
+                      }}
                     />
-                  ))}
+                  );
+                  })}
 
                   {/* Asset拖动预览框（纯视觉预览，不是真实item） */}
                   {/* 与 item 拖动预览保持一致：当要插入新 track 时（externalInsertPosition != null），不显示预览 */}

@@ -14,8 +14,33 @@ import type { Track, Item } from '@remotion-fast/core';
 const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFrom?: number; endFrame?: number; globalEndFrame?: number }> = ({ item, durationInFrames, visibleFrom, endFrame, globalEndFrame }) => {
   const frame = useCurrentFrame();
 
+  // Get item properties for positioning and transforms
+  const properties = item.properties || {
+    x: 0,
+    y: 0,
+    width: 1,
+    height: 1,
+    rotation: 0,
+    opacity: 1,
+    zIndex: 0,
+  };
+
+  // Calculate absolute positioning styles
+  const getPositionStyles = (): React.CSSProperties => ({
+    position: 'absolute',
+    left: `${properties.x * 100}%`,
+    top: `${properties.y * 100}%`,
+    width: `${properties.width * 100}%`,
+    height: `${properties.height * 100}%`,
+    transform: `rotate(${properties.rotation || 0}deg)`,
+    opacity: properties.opacity || 1,
+    zIndex: properties.zIndex || 0,
+  });
+
   if (item.type === 'solid') {
-    return <AbsoluteFill style={{ backgroundColor: item.color }} />;
+    return (
+      <div style={{ ...getPositionStyles(), backgroundColor: item.color }} />
+    );
   }
 
   if (item.type === 'text') {
@@ -24,11 +49,13 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
     });
 
     return (
-      <AbsoluteFill
+      <div
         style={{
+          ...getPositionStyles(),
+          display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          opacity,
+          opacity: opacity * (properties.opacity || 1),
         }}
       >
         <h1
@@ -39,11 +66,12 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
             fontWeight: item.fontWeight || 'bold',
             textAlign: 'center',
             padding: '0 40px',
+            margin: 0,
           }}
         >
           {item.text}
         </h1>
-      </AbsoluteFill>
+      </div>
     );
   }
 
@@ -57,19 +85,26 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
     const hidden = isBeforeVisible || shouldHideLastFrame;
 
     return (
-      <AbsoluteFill style={{ backgroundColor: 'black' }}>
-        <AbsoluteFill style={{ opacity: hidden ? 0 : 1 }}>
+      <div style={getPositionStyles()}>
+        <div style={{ 
+          width: '100%', 
+          height: '100%', 
+          opacity: hidden ? 0 : 1,
+          backgroundColor: 'black',
+          borderRadius: '4px',
+          overflow: 'hidden'
+        }}>
           <OffthreadVideo
             src={item.src}
-            style={{ width: '100%', height: '100%' }}
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             startFrom={sourceStart}
             pauseWhenBuffering={false}
             acceptableTimeShiftInSeconds={0.25}
             muted={hidden}
             volume={1}
           />
-        </AbsoluteFill>
-      </AbsoluteFill>
+        </div>
+      </div>
     );
   }
 
@@ -81,14 +116,46 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
 
   if (item.type === 'image') {
     return (
-      <AbsoluteFill
+      <div
         style={{
+          ...getPositionStyles(),
+          display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
         }}
       >
-        <Img src={item.src} style={{ maxWidth: '100%', maxHeight: '100%' }} />
-      </AbsoluteFill>
+        <Img 
+          src={item.src} 
+          style={{ 
+            width: '100%', 
+            height: '100%', 
+            objectFit: 'cover',
+            borderRadius: '4px'
+          }} 
+        />
+      </div>
+    );
+  }
+
+  if (item.type === 'sticker') {
+    return (
+      <div
+        style={{
+          ...getPositionStyles(),
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+        }}
+      >
+        <Img 
+          src={item.src} 
+          style={{ 
+            width: '100%', 
+            height: '100%', 
+            objectFit: 'contain'
+          }} 
+        />
+      </div>
     );
   }
 
@@ -100,8 +167,7 @@ const TrackComponent: React.FC<{ track: Track; globalEndFrame: number }> = ({ tr
   if (track.hidden) {
     return null;
   }
-
-  // 合并同源且时间/偏移连续的媒体分段（仅渲染层副本，不改state）
+// 合并同源且时间/偏移连续的媒体分段（仅渲染层副本，不改state）
   const mergeContiguousMediaItems = (items: Item[]): Item[] => {
     const sorted = [...items].sort((a, b) => a.from - b.from);
     const result: Item[] = [];
@@ -139,7 +205,7 @@ const TrackComponent: React.FC<{ track: Track; globalEndFrame: number }> = ({ tr
   const PREMOUNT_FRAMES = 45; // ~1.5秒@30fps，提前挂载以减少边界卡顿
 
   return (
-    <AbsoluteFill>
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       {playbackItems.map((item, idx) => {
         const prev = idx > 0 ? playbackItems[idx - 1] : undefined;
         const isPrevContiguous = prev && (prev.type === item.type) && ('src' in prev) && ('src' in item)
@@ -157,7 +223,7 @@ const TrackComponent: React.FC<{ track: Track; globalEndFrame: number }> = ({ tr
           </Sequence>
         );
       })}
-    </AbsoluteFill>
+    </div>
   );
 };
 
@@ -176,10 +242,16 @@ export const VideoComposition: React.FC<{ tracks: Track[] }> = ({ tracks }) => {
   }, [tracks]);
 
   return (
-    <AbsoluteFill style={{ backgroundColor: 'white' }}>
+    <div style={{ 
+      position: 'relative', 
+      width: '100%', 
+      height: '100%', 
+      backgroundColor: 'transparent',
+      overflow: 'hidden'
+    }}>
       {tracks.map((track) => (
         <TrackComponent key={track.id} track={track} globalEndFrame={globalEndFrame} />
       ))}
-    </AbsoluteFill>
+    </div>
   );
 };

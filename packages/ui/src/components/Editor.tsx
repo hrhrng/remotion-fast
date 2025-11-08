@@ -1,6 +1,6 @@
 import React from 'react';
 import { EditorProvider } from '@remotion-fast/core';
-import { PreviewCanvas } from './PreviewCanvas';
+import { CanvasPreview } from './CanvasPreview';
 import { Timeline } from './Timeline';
 import { AssetPanel } from './AssetPanel';
 import { PropertiesPanel } from './PropertiesPanel';
@@ -52,7 +52,7 @@ export const Editor: React.FC = () => {
       `}</style>
       <div style={styles.container}>
         <header style={styles.header}>
-          <h1 style={styles.logo}>Remotion Editor</h1>
+          <h1 style={styles.logo}>Remotion Fast</h1>
           <div style={styles.headerActions}>
             <button
               onClick={() => setShowExportModal(true)}
@@ -114,7 +114,7 @@ export const Editor: React.FC = () => {
             {/* Top Row - Preview and Properties */}
             <div style={styles.topRow}>
               <div style={styles.preview}>
-                <PreviewCanvas />
+                <CanvasPreview />
               </div>
               <aside style={styles.rightSidebar}>
                 <PropertiesPanel />

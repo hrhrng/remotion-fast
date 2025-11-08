@@ -12,7 +12,7 @@ export const Editor: React.FC = () => {
     <EditorProvider>
       <div style={styles.container}>
         <header style={styles.header}>
-          <h1 style={styles.logo}>Remotion Editor</h1>
+          <h1 style={styles.logo}>Remotion Fast</h1>
           <div style={styles.headerActions}>
             <button
               onClick={() => setShowExportModal(true)}
