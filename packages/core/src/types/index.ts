@@ -1,9 +1,28 @@
+// Canvas properties for visual items
+export type CanvasProperties = {
+  // Position on canvas (percentage of composition size, 0-100)
+  x?: number;
+  y?: number;
+  // Dimensions (percentage of composition size, 0-100)
+  width?: number;
+  height?: number;
+  // Whether to maintain aspect ratio when resizing
+  lockAspectRatio?: boolean;
+  // Rotation in degrees (0-360)
+  rotation?: number;
+  // Opacity (0-1)
+  opacity?: number;
+  // Fade in/out duration in frames (visual fade)
+  fadeIn?: number;
+  fadeOut?: number;
+};
+
 // Base types for timeline items
 export type BaseItem = {
   id: string;
   from: number; // Start frame
   durationInFrames: number;
-};
+} & CanvasProperties;
 
 // Different item types
 export type SolidItem = BaseItem & {
@@ -32,6 +51,7 @@ export type VideoItem = BaseItem & {
   videoFadeOut?: number; // Video fade out duration in frames
   audioFadeIn?: number; // Audio fade in duration in frames
   audioFadeOut?: number; // Audio fade out duration in frames
+  cornerRadius?: number; // Corner radius in pixels
 };
 
 export type AudioItem = BaseItem & {
@@ -49,6 +69,7 @@ export type AudioItem = BaseItem & {
 export type ImageItem = BaseItem & {
   type: 'image';
   src: string;
+  cornerRadius?: number; // Corner radius in pixels
 };
 
 export type StickerItem = BaseItem & {
@@ -61,6 +82,7 @@ export type StickerItem = BaseItem & {
     frameCount: number;
     fps: number;
   };
+  cornerRadius?: number; // Corner radius in pixels
 };
 
 export type Item = SolidItem | TextItem | VideoItem | AudioItem | ImageItem | StickerItem;

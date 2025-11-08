@@ -255,6 +255,146 @@ export const PropertiesPanel: React.FC = () => {
           </div>
         </div>
 
+        {/* Transform Properties (for visual items) */}
+        {item.type !== 'audio' && (
+          <div style={styles.section}>
+            <h3 style={styles.sectionTitle}>Transform</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+              <div>
+                <label style={styles.label}>X (%)</label>
+                <input
+                  type="number"
+                  value={item.x ?? 50}
+                  onChange={(e) => updateItem({ x: parseFloat(e.target.value) || 0 })}
+                  style={styles.input}
+                  min="0"
+                  max="100"
+                  step="0.1"
+                />
+              </div>
+              <div>
+                <label style={styles.label}>Y (%)</label>
+                <input
+                  type="number"
+                  value={item.y ?? 50}
+                  onChange={(e) => updateItem({ y: parseFloat(e.target.value) || 0 })}
+                  style={styles.input}
+                  min="0"
+                  max="100"
+                  step="0.1"
+                />
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '8px', marginBottom: '12px' }}>
+              <div>
+                <label style={styles.label}>Width (%)</label>
+                <input
+                  type="number"
+                  value={item.width ?? 100}
+                  onChange={(e) => updateItem({ width: parseFloat(e.target.value) || 1 })}
+                  style={styles.input}
+                  min="0"
+                  max="100"
+                  step="0.1"
+                />
+              </div>
+              <div>
+                <label style={styles.label}>Height (%)</label>
+                <input
+                  type="number"
+                  value={item.height ?? 100}
+                  onChange={(e) => updateItem({ height: parseFloat(e.target.value) || 1 })}
+                  style={styles.input}
+                  min="0"
+                  max="100"
+                  step="0.1"
+                />
+              </div>
+              <div>
+                <label style={styles.label}>Lock</label>
+                <button
+                  onClick={() => updateItem({ lockAspectRatio: !item.lockAspectRatio })}
+                  style={{
+                    ...styles.iconButton,
+                    backgroundColor: item.lockAspectRatio ? '#0066ff' : '#3d3d3d',
+                  }}
+                  title={item.lockAspectRatio ? 'Aspect ratio locked' : 'Aspect ratio unlocked'}
+                >
+                  {item.lockAspectRatio ? '🔒' : '🔓'}
+                </button>
+              </div>
+            </div>
+            <div style={styles.field}>
+              <label style={styles.label}>Rotation (degrees)</label>
+              <input
+                type="number"
+                value={item.rotation ?? 0}
+                onChange={(e) => updateItem({ rotation: parseFloat(e.target.value) || 0 })}
+                style={styles.input}
+                min="0"
+                max="360"
+                step="1"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Appearance Properties (for visual items) */}
+        {item.type !== 'audio' && (
+          <div style={styles.section}>
+            <h3 style={styles.sectionTitle}>Appearance</h3>
+            <div style={styles.field}>
+              <label style={styles.label}>Opacity</label>
+              <input
+                type="range"
+                value={item.opacity ?? 1}
+                onChange={(e) => updateItem({ opacity: parseFloat(e.target.value) })}
+                style={{ width: '100%' }}
+                min="0"
+                max="1"
+                step="0.01"
+              />
+              <div style={{ fontSize: '12px', color: '#aaaaaa', marginTop: '4px' }}>
+                {Math.round((item.opacity ?? 1) * 100)}%
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <div>
+                <label style={styles.label}>Fade In (frames)</label>
+                <input
+                  type="number"
+                  value={item.fadeIn ?? 0}
+                  onChange={(e) => updateItem({ fadeIn: parseInt(e.target.value) || 0 })}
+                  style={styles.input}
+                  min="0"
+                />
+              </div>
+              <div>
+                <label style={styles.label}>Fade Out (frames)</label>
+                <input
+                  type="number"
+                  value={item.fadeOut ?? 0}
+                  onChange={(e) => updateItem({ fadeOut: parseInt(e.target.value) || 0 })}
+                  style={styles.input}
+                  min="0"
+                />
+              </div>
+            </div>
+            {(item.type === 'video' || item.type === 'image' || item.type === 'sticker') && (
+              <div style={styles.field}>
+                <label style={styles.label}>Corner Radius (px)</label>
+                <input
+                  type="number"
+                  value={(item as VideoItem).cornerRadius ?? 0}
+                  onChange={(e) => updateItem({ cornerRadius: parseInt(e.target.value) || 0 })}
+                  style={styles.input}
+                  min="0"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Text Item Properties */}
         {item.type === 'text' && (
           <div style={styles.section}>

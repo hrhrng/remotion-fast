@@ -1,6 +1,6 @@
 import React from 'react';
 import { EditorProvider } from '@remotion-fast/core';
-import { PreviewCanvas } from './PreviewCanvas';
+import { InteractiveCanvas } from './InteractiveCanvas';
 import { Timeline } from './Timeline';
 import { AssetPanel } from './AssetPanel';
 import { PropertiesPanel } from './PropertiesPanel';
@@ -114,7 +114,7 @@ export const Editor: React.FC = () => {
             {/* Top Row - Preview and Properties */}
             <div style={styles.topRow}>
               <div style={styles.preview}>
-                <PreviewCanvas />
+                <InteractiveCanvas />
               </div>
               <aside style={styles.rightSidebar}>
                 <PropertiesPanel />
@@ -286,6 +286,7 @@ const styles: Record<string, React.CSSProperties> = {
   preview: {
     flex: 1,
     minHeight: 0,
+    minWidth: 0,
   },
   timeline: {
     height: '300px',

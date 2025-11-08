@@ -10,40 +10,97 @@ import {
 } from 'remotion';
 import type { Track, Item } from '@remotion-fast/core';
 
+// Helper function to apply canvas properties
+const getCanvasStyle = (item: Item, frame: number, durationInFrames: number): React.CSSProperties => {
+  const style: React.CSSProperties = {};
+
+  // Apply position (default to center: 50%, 50%)
+  const x = item.x ?? 50;
+  const y = item.y ?? 50;
+  const width = item.width ?? 100;
+  const height = item.height ?? 100;
+
+  // Apply transform
+  const transforms: string[] = [];
+
+  // Position: translate from center
+  transforms.push(`translate(${x - 50}%, ${y - 50}%)`);
+
+  // Rotation
+  if (item.rotation) {
+    transforms.push(`rotate(${item.rotation}deg)`);
+  }
+
+  style.transform = transforms.join(' ');
+  style.width = `${width}%`;
+  style.height = `${height}%`;
+  style.left = '50%';
+  style.top = '50%';
+  style.position = 'absolute';
+
+  // Apply opacity with fade in/out
+  let opacity = item.opacity ?? 1;
+
+  // Fade in
+  if (item.fadeIn && frame < item.fadeIn) {
+    const fadeInProgress = interpolate(frame, [0, item.fadeIn], [0, 1], {
+      extrapolateRight: 'clamp',
+    });
+    opacity *= fadeInProgress;
+  }
+
+  // Fade out
+  if (item.fadeOut && frame > durationInFrames - item.fadeOut) {
+    const fadeOutProgress = interpolate(
+      frame,
+      [durationInFrames - item.fadeOut, durationInFrames],
+      [1, 0],
+      { extrapolateRight: 'clamp' }
+    );
+    opacity *= fadeOutProgress;
+  }
+
+  style.opacity = opacity;
+
+  return style;
+};
+
 // Component to render individual items
 const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFrom?: number; endFrame?: number; globalEndFrame?: number }> = ({ item, durationInFrames, visibleFrom, endFrame, globalEndFrame }) => {
   const frame = useCurrentFrame();
+  const canvasStyle = item.type !== 'audio' ? getCanvasStyle(item, frame, durationInFrames) : {};
 
   if (item.type === 'solid') {
-    return <AbsoluteFill style={{ backgroundColor: item.color }} />;
+    return (
+      <div style={canvasStyle}>
+        <AbsoluteFill style={{ backgroundColor: item.color }} />
+      </div>
+    );
   }
 
   if (item.type === 'text') {
-    const opacity = interpolate(frame, [0, 10], [0, 1], {
-      extrapolateRight: 'clamp',
-    });
-
     return (
-      <AbsoluteFill
-        style={{
-          justifyContent: 'center',
-          alignItems: 'center',
-          opacity,
-        }}
-      >
-        <h1
+      <div style={canvasStyle}>
+        <AbsoluteFill
           style={{
-            color: item.color,
-            fontSize: item.fontSize || 60,
-            fontFamily: item.fontFamily || 'Arial',
-            fontWeight: item.fontWeight || 'bold',
-            textAlign: 'center',
-            padding: '0 40px',
+            justifyContent: 'center',
+            alignItems: 'center',
           }}
         >
-          {item.text}
-        </h1>
-      </AbsoluteFill>
+          <h1
+            style={{
+              color: item.color,
+              fontSize: item.fontSize || 60,
+              fontFamily: item.fontFamily || 'Arial',
+              fontWeight: item.fontWeight || 'bold',
+              textAlign: 'center',
+              padding: '0 40px',
+            }}
+          >
+            {item.text}
+          </h1>
+        </AbsoluteFill>
+      </div>
     );
   }
 
@@ -56,20 +113,32 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
       : false;
     const hidden = isBeforeVisible || shouldHideLastFrame;
 
+    const videoStyle: React.CSSProperties = {
+      width: '100%',
+      height: '100%',
+      objectFit: 'contain',
+    };
+
+    if (item.cornerRadius) {
+      videoStyle.borderRadius = `${item.cornerRadius}px`;
+    }
+
     return (
-      <AbsoluteFill style={{ backgroundColor: 'black' }}>
-        <AbsoluteFill style={{ opacity: hidden ? 0 : 1 }}>
-          <OffthreadVideo
-            src={item.src}
-            style={{ width: '100%', height: '100%' }}
-            startFrom={sourceStart}
-            pauseWhenBuffering={false}
-            acceptableTimeShiftInSeconds={0.25}
-            muted={hidden}
-            volume={1}
-          />
+      <div style={canvasStyle}>
+        <AbsoluteFill style={{ backgroundColor: 'black', overflow: 'hidden', borderRadius: item.cornerRadius ? `${item.cornerRadius}px` : undefined }}>
+          <AbsoluteFill style={{ opacity: hidden ? 0 : 1 }}>
+            <OffthreadVideo
+              src={item.src}
+              style={videoStyle}
+              startFrom={sourceStart}
+              pauseWhenBuffering={false}
+              acceptableTimeShiftInSeconds={0.25}
+              muted={hidden}
+              volume={1}
+            />
+          </AbsoluteFill>
         </AbsoluteFill>
-      </AbsoluteFill>
+      </div>
     );
   }
 
@@ -80,15 +149,27 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
   }
 
   if (item.type === 'image') {
+    const imageStyle: React.CSSProperties = {
+      maxWidth: '100%',
+      maxHeight: '100%',
+      objectFit: 'contain',
+    };
+
+    if (item.cornerRadius) {
+      imageStyle.borderRadius = `${item.cornerRadius}px`;
+    }
+
     return (
-      <AbsoluteFill
-        style={{
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
-      >
-        <Img src={item.src} style={{ maxWidth: '100%', maxHeight: '100%' }} />
-      </AbsoluteFill>
+      <div style={canvasStyle}>
+        <AbsoluteFill
+          style={{
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          <Img src={item.src} style={imageStyle} />
+        </AbsoluteFill>
+      </div>
     );
   }
 

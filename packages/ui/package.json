@@ -33,8 +33,10 @@
     "remotion": "^4.0.0"
   },
   "dependencies": {
+    "@dnd-kit/modifiers": "^9.0.0",
     "@remotion-fast/core": "workspace:*",
-    "@remotion-fast/remotion-components": "workspace:*"
+    "@remotion-fast/remotion-components": "workspace:*",
+    "react-moveable": "^0.56.0"
   },
   "devDependencies": {
     "@remotion/player": "^4.0.363",
