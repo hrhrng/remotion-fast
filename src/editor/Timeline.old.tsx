@@ -687,7 +687,7 @@ export const Timeline: React.FC = () => {
                             height: `${waveformHeight}px`,
                           }}
                         >
-                          {renderWaveform(item.waveform, item.durationInFrames * pixelsPerFrame, waveformHeight)}
+                          {item.waveform && renderWaveform(item.waveform, item.durationInFrames * pixelsPerFrame, waveformHeight)}
                         </div>
                       )}
 

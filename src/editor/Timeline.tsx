@@ -140,6 +140,7 @@ export const Timeline: React.FC = () => {
             type: 'video',
             from: frame,
             durationInFrames: asset.duration || 90,
+            src: asset.src,
             assetId: asset.id,
           };
           break;
@@ -149,6 +150,7 @@ export const Timeline: React.FC = () => {
             type: 'audio',
             from: frame,
             durationInFrames: asset.duration || 90,
+            src: asset.src,
             assetId: asset.id,
           };
           break;
@@ -158,6 +160,7 @@ export const Timeline: React.FC = () => {
             type: 'image',
             from: frame,
             durationInFrames: 90,
+            src: asset.src,
             assetId: asset.id,
           };
           break;

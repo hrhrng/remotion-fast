@@ -72,8 +72,7 @@ export const PreviewCanvas: React.FC = () => {
           }}
           controls
           loop
-          onPause={() => handlePlayingChange(false)}
-          onPlay={() => handlePlayingChange(true)}
+          
         />
       </div>
     </div>

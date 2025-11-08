@@ -75,7 +75,7 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
             ? {
                 ...t,
                 items: t.items.map((i) =>
-                  i.id === action.payload.itemId ? { ...i, ...action.payload.updates } : i
+                  i.id === action.payload.itemId ? { ...i, ...action.payload.updates } as Item : i
                 ),
               }
             : t

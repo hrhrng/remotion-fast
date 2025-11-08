@@ -23,6 +23,7 @@ export type TextItem = BaseItem & {
 export type VideoItem = BaseItem & {
   type: 'video';
   src: string;
+  assetId?: string;
   waveform?: number[];
   videoFadeIn?: number; // Video fade in duration in frames
   videoFadeOut?: number; // Video fade out duration in frames
@@ -33,6 +34,7 @@ export type VideoItem = BaseItem & {
 export type AudioItem = BaseItem & {
   type: 'audio';
   src: string;
+  assetId?: string;
   volume?: number;
   waveform?: number[];
   audioFadeIn?: number; // Audio fade in duration in frames
@@ -42,6 +44,7 @@ export type AudioItem = BaseItem & {
 export type ImageItem = BaseItem & {
   type: 'image';
   src: string;
+  assetId?: string;
 };
 
 export type Item = SolidItem | TextItem | VideoItem | AudioItem | ImageItem;

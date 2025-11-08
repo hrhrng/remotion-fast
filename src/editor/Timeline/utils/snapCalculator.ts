@@ -91,17 +91,17 @@ export function calculateSnap(
 
   // 找到最近的吸附目标
   let closestTarget: SnapTarget | null = null;
-  let minDistance = threshold;
+  let minDistance = Infinity;
 
   snapTargets.forEach((target) => {
     const distance = Math.abs(target.frame - frame);
-    if (distance < minDistance) {
+    if (distance <= threshold && distance < minDistance) {
       minDistance = distance;
       closestTarget = target;
     }
   });
 
-  if (closestTarget) {
+  if (closestTarget && closestTarget.frame !== undefined) {
     return {
       snappedFrame: closestTarget.frame,
       target: closestTarget,

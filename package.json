@@ -21,6 +21,14 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@remotion/cli": "^4.0.363",
+    "@remotion/player": "^4.0.363",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "framer-motion": "^12.23.24",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "remotion": "^4.0.363",
     "typescript": "^5.9.3"
   },
   "dependencies": {
