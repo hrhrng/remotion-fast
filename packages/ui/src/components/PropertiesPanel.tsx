@@ -1,6 +1,7 @@
 import React from 'react';
 import { useEditor } from '@remotion-fast/core';
-import type { TextItem, SolidItem } from '@remotion-fast/core';
+import type { TextItem, SolidItem, VideoItem, AudioItem } from '@remotion-fast/core';
+
 
 export const PropertiesPanel: React.FC = () => {
   const { state, dispatch } = useEditor();
@@ -12,6 +13,15 @@ export const PropertiesPanel: React.FC = () => {
         .flatMap((t) => t.items.map((i) => ({ trackId: t.id, item: i })))
         .find((x) => x.item.id === state.selectedItemId)
     : null;
+
+  // Calculate split quality and recommendations (must be before early return)
+  const selectedItemData = selectedItem?.item;
+  const itemEnd = selectedItemData ? selectedItemData.from + selectedItemData.durationInFrames : 0;
+  const canSplit = selectedItemData ? (state.currentFrame > selectedItemData.from && state.currentFrame < itemEnd) : false;
+
+  
+
+  
 
   // Format time helper
   const formatTime = (frames: number): string => {
@@ -176,10 +186,6 @@ export const PropertiesPanel: React.FC = () => {
     });
   };
 
-  // Check if playhead is within item bounds
-  const itemEnd = item.from + item.durationInFrames;
-  const canSplit = state.currentFrame > item.from && state.currentFrame < itemEnd;
-
   const splitItem = () => {
     if (!canSplit) return;
 
@@ -192,6 +198,8 @@ export const PropertiesPanel: React.FC = () => {
       },
     });
   };
+
+  
 
   return (
     <div style={styles.container}>
@@ -221,6 +229,7 @@ export const PropertiesPanel: React.FC = () => {
       </div>
 
       <div style={styles.content}>
+        
         {/* Common Properties */}
         <div style={styles.section}>
           <h3 style={styles.sectionTitle}>Timing</h3>
@@ -578,5 +587,34 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '14px',
     fontWeight: 600,
     cursor: 'pointer',
+  },
+  warningBox: {
+    padding: '12px 16px',
+    borderRadius: '8px',
+    marginBottom: '16px',
+  },
+  warningTitle: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#ffffff',
+    marginBottom: '6px',
+  },
+  warningMessage: {
+    fontSize: '13px',
+    color: '#ffffff',
+    lineHeight: 1.5,
+    marginBottom: '8px',
+    opacity: 0.9,
+  },
+  warningButton: {
+    padding: '6px 12px',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    color: '#ffffff',
+    border: '1px solid rgba(255, 255, 255, 0.3)',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: 500,
+    marginTop: '4px',
   },
 };

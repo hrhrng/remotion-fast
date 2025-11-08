@@ -99,14 +99,17 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
   const asset = React.useMemo(() => {
     if (item.type === 'video' || item.type === 'audio' || item.type === 'image') {
       // Items have src directly, not assetId
-      return assets.find((a) => a.src === item.src);
+      return assets.find((a) => a.src === item.src) ?? null;
     }
     return null;
   }, [item, assets]);
 
   const thumbnail = asset?.thumbnail || (item.type === 'image' ? item.src : undefined);
-  const hasWaveform = (item.type === 'audio' || item.type === 'video') &&
-    'waveform' in item && item.waveform;
+  const itemWaveform: number[] | undefined =
+    (item.type === 'audio' || item.type === 'video') && 'waveform' in item
+      ? (item as any).waveform as number[] | undefined
+      : undefined;
+  const hasWaveform: boolean = Array.isArray(itemWaveform) && itemWaveform.length > 0;
 
   // Calculate heights - ensure items fit within 72px track height
   const hasVideoWithThumbnail = item.type === 'video' && thumbnail && hasWaveform;
@@ -124,8 +127,11 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
   const [isGeneratingThumbnail, setIsGeneratingThumbnail] = React.useState(false);
   const lastZoomRef = React.useRef<number>(pixelsPerFrame);
   const thumbnailCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const canvasPixelWidthRef = React.useRef<number>(0);
+
 
   // Generate thumbnail based on current zoom level
+  // 绘制整个视频的缩略图，trim 由外层 CSS transform 完成
   const generateDynamicThumbnail = React.useCallback(async () => {
     if (!asset?.duration || item.type !== 'video' || !('src' in item)) {
       return;
@@ -137,11 +143,11 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
       const videoSrc = item.src;
       const duration = asset.duration;
       const totalFrames = secondsToFrames(duration, state.fps);
-      const sourceOffset = (item as any).sourceStartInFrames || 0;
 
       // 计算目标显示区域的高度和宽度（像素）
-      const displayHeight = hasWaveform ? thumbnailHeight : itemHeight; // 与实际渲染一致
-      const timelinePixelWidth = frameToPixels(item.durationInFrames, pixelsPerFrame);
+      // 注意：这里使用 totalFrames 而不是 item.durationInFrames，绘制完整视频
+      const displayHeight = hasWaveform ? thumbnailHeight : itemHeight;
+      const fullVideoPixelWidth = frameToPixels(totalFrames, pixelsPerFrame);
 
       const canvasEl = thumbnailCanvasRef.current;
       const ctx = canvasEl?.getContext('2d');
@@ -150,13 +156,16 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
         return;
       }
 
-      // 初始化画布尺寸并先填充全黑
+      // 初始化画布尺寸（基于完整视频）并先填充全黑
       const destHeight = Math.max(16, Math.floor(displayHeight));
-      canvasEl.width = Math.max(1, Math.ceil(timelinePixelWidth));
+      canvasEl.width = Math.max(1, Math.ceil(fullVideoPixelWidth));
       canvasEl.height = destHeight;
+      // Record canvas width for CSS viewport logic
+      canvasPixelWidthRef.current = canvasEl.width;
       ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
       ctx.fillStyle = 'black';
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
 
       // Generate filmstrip progressively; avoid runtime logs in production
 
@@ -246,16 +255,14 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
       };
 
       // Helpers to map columns to sample indices and draw
+      // 绘制整个视频的缩略图（0 到 1 的完整范围）
       const drawFromEntry = (entry: FilmstripCacheEntry) => {
         const destFrameWidth = Math.max(1, Math.floor(entry.frameWidth * (destHeight / entry.frameHeight)));
-        const columns = Math.max(1, Math.ceil(timelinePixelWidth / destFrameWidth));
+        const columns = Math.max(1, Math.ceil(fullVideoPixelWidth / destFrameWidth));
         const colToIdx: number[] = new Array(columns);
-        // Map columns to samples within [startRatio, endRatio]
-        const startRatio = Math.max(0, Math.min(1, sourceOffset / totalFrames));
-        const endRatio = Math.max(startRatio, Math.min(1, (sourceOffset + item.durationInFrames) / totalFrames));
+        // Map columns to samples across the entire video [0, 1]
         for (let col = 0; col < columns; col++) {
-          const local = columns === 1 ? 0 : col / (columns - 1);
-          const ratio = startRatio + (endRatio - startRatio) * local;
+          const ratio = columns === 1 ? 0 : col / (columns - 1);
           colToIdx[col] = Math.min(entry.sampleCount - 1, Math.max(0, Math.round(ratio * (entry.sampleCount - 1))));
         }
 
@@ -294,14 +301,12 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
           if (!mapped) {
             entryForMap = entry;
             destFrameWidth = Math.max(1, Math.floor(entry.frameWidth * (destHeight / entry.frameHeight)));
-            columns = Math.max(1, Math.ceil(timelinePixelWidth / destFrameWidth));
+            columns = Math.max(1, Math.ceil(fullVideoPixelWidth / destFrameWidth));
             colToIdx = new Array(columns);
             idxToCols = new Array(entry.sampleCount).fill(null).map(() => []);
-            const startRatio = Math.max(0, Math.min(1, sourceOffset / totalFrames));
-            const endRatio = Math.max(startRatio, Math.min(1, (sourceOffset + item.durationInFrames) / totalFrames));
+            // 绘制整个视频范围 [0, 1]
             for (let col = 0; col < columns; col++) {
-              const local = columns === 1 ? 0 : col / (columns - 1);
-              const ratio = startRatio + (endRatio - startRatio) * local;
+              const ratio = columns === 1 ? 0 : col / (columns - 1);
               const idx = Math.min(entry.sampleCount - 1, Math.max(0, Math.round(ratio * (entry.sampleCount - 1))));
               colToIdx[col] = idx;
               idxToCols[idx].push(col);
@@ -331,32 +336,58 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
     }
   }, [asset?.duration, item, pixelsPerFrame, thumbnailHeight, itemHeight, hasWaveform]);
 
-  // Regenerate on mount and when zoom changes meaningfully
+  // 在以下情况触发绘制：
+  // 1. 素材首次拖入 timeline (justInserted)
+  // 2. zoom 级别变化（需要更多或更少的帧样本）
+  // 注意：trim 和移动操作只改变 CSS transform，不触发重绘
   const didInitRef = React.useRef(false);
+  const pendingClearInsertFlagRef = React.useRef(false);
+  const lastZoomLevelRef = React.useRef<number>(pixelsPerFrame);
+
   React.useEffect(() => {
     if (!didInitRef.current) {
       didInitRef.current = true;
-      lastZoomRef.current = pixelsPerFrame;
-      generateDynamicThumbnail();
+      lastZoomLevelRef.current = pixelsPerFrame;
+
+      // 对于视频类型，如果有 justInserted 标记，初始绘制
+      if (item.type === 'video' && asset?.duration) {
+        if ((item as any).justInserted) {
+          pendingClearInsertFlagRef.current = true;
+        }
+        generateDynamicThumbnail();
+      }
       return;
     }
 
-    const zoomChanged = Math.abs(pixelsPerFrame - lastZoomRef.current) > 0.01;
-    if ((zoomChanged || (item as any).sourceStartInFrames !== undefined) && !isGeneratingThumbnail) {
-      lastZoomRef.current = pixelsPerFrame;
+    // 只有 zoom 级别显著变化时才重绘
+    const zoomChanged = Math.abs(pixelsPerFrame - lastZoomLevelRef.current) > 0.01;
+    if (zoomChanged) {
+      lastZoomLevelRef.current = pixelsPerFrame;
       generateDynamicThumbnail();
     }
-  }, [pixelsPerFrame, generateDynamicThumbnail, isGeneratingThumbnail, item.id, (item as any).sourceStartInFrames, item.durationInFrames]);
+  }, [
+    pixelsPerFrame,
+    generateDynamicThumbnail,
+    item.id,
+    item.type,
+    asset?.duration,
+  ]);
 
-  // Also regenerate when waveform availability toggles (e.g., when item.waveform loads)
+  // 绘制完成后，清除 justInserted 标记，避免后续重复绘制
+  React.useEffect(() => {
+    if (!isGeneratingThumbnail && pendingClearInsertFlagRef.current && (item as any).justInserted) {
+      pendingClearInsertFlagRef.current = false;
+      onUpdate(item.id, { justInserted: false } as any);
+    }
+  }, [isGeneratingThumbnail, item.id, onUpdate]);
+
+
+  // 不再因为 waveform 可用性变化而重绘，遵循“仅拖入时绘制”的策略
   const prevHasWaveformRef = React.useRef<boolean | null>(null);
   React.useEffect(() => {
-    if (prevHasWaveformRef.current === hasWaveform) return;
     prevHasWaveformRef.current = hasWaveform;
-    if (hasWaveform && !isGeneratingThumbnail) {
-      generateDynamicThumbnail();
-    }
-  }, [hasWaveform, isGeneratingThumbnail, generateDynamicThumbnail]);
+  }, [hasWaveform]);
+
 
   // Revoke previously created object URLs to avoid memory leaks and reduce flicker
   const prevThumbUrlRef = React.useRef<string | null>(null);
@@ -405,31 +436,26 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
   };
 
   // Render waveform with volume and clipping
+  // 渲染完整的 waveform，不做任何裁剪
+  // 裁剪由外层的 overflow:hidden 和 transform 完成
   const renderWaveform = (
     waveform: number[],
-    width: number,
     height: number
   ) => {
-    // 计算应该显示波形的哪一部分
-    let visibleWaveform = waveform;
-    if (asset?.duration) {
-      const totalFrames = secondsToFrames(asset.duration, state.fps);
-      const currentFrames = item.durationInFrames;
-      const sourceOffset = (item as any).sourceStartInFrames || 0;
-      const startIndex = Math.floor(waveform.length * (sourceOffset / totalFrames));
-      const endIndex = Math.floor(waveform.length * ((sourceOffset + currentFrames) / totalFrames));
-      visibleWaveform = waveform.slice(
-        Math.max(0, Math.min(waveform.length - 1, startIndex)),
-        Math.max(1, Math.min(waveform.length, endIndex))
-      );
+    if (!asset?.duration) {
+      return null;
     }
 
-    const barCount = visibleWaveform.length;
-    const barWidth = width / barCount;
+    // 计算完整波形的宽度（基于整个视频的时长）
+    const totalFrames = secondsToFrames(asset.duration, state.fps);
+    const fullWidth = frameToPixels(totalFrames, pixelsPerFrame);
+
+    const barCount = waveform.length;
+    const barWidth = fullWidth / barCount;
 
     return (
       <svg
-        width={width}
+        width={fullWidth}
         height={height}
         style={{
           position: 'absolute',
@@ -439,7 +465,7 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
         }}
         preserveAspectRatio="none"
       >
-        {visibleWaveform.map((peak, i) => {
+        {waveform.map((peak, i) => {
           const targetBarHeight = peak * height * itemVolume;
           const x = i * barWidth;
           const isClipping = targetBarHeight > height;
@@ -743,9 +769,9 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
         overflow: 'hidden',
         boxSizing: 'border-box',
         backgroundImage: (useNewRenderer || hasWaveform || item.type === 'audio') ? 'none' : (displayThumbnail ? `url(${displayThumbnail})` : 'none'),
-        // Dynamic ready -> 'auto 100%'; fallback poster -> 'cover' to fill width immediately
-        backgroundSize: useNewRenderer ? 'cover' : (item.type === 'image' ? 'contain' : (isDynamicReady ? 'auto 100%' : 'cover')),
-        backgroundPosition: 'left top',
+        // Dynamic ready -> 'auto 100%'; fallback poster -> 'cover' to fill width immediately	        backgroundSize: useNewRenderer ? 'cover' : (isDynamicReady ? 'auto 100%' : 'cover'),
+
+backgroundPosition: 'left top',
         backgroundRepeat: 'no-repeat',
         opacity: isDragging ? 0 : (track.hidden ? 0.3 : 1),
         outline: isDragging ? '1px dashed rgba(0, 153, 255, 0.8)' : 'none',
@@ -770,25 +796,35 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
             height: `${thumbnailHeight}px`,
             pointerEvents: 'none',
             zIndex: 1,
-            // Show poster under the canvas to avoid black flashes
-            backgroundImage: displayThumbnail ? `url(${displayThumbnail})` : undefined,
-            backgroundSize: 'cover',
-            backgroundPosition: 'left top',
+            overflow: 'hidden',
+            backgroundColor: '#000',
           }}
         >
-          <canvas
-            ref={thumbnailCanvasRef}
+          <div
             style={{
-              width: '100%',
+              position: 'absolute',
+              top: 0,
+              left: 0,
               height: '100%',
-              display: 'block',
+              width: canvasPixelWidthRef.current ? `${canvasPixelWidthRef.current}px` : '100%',
+              transform: `translateX(${(-((item as any).sourceStartInFrames || 0) * pixelsPerFrame)}px)`,
+              willChange: 'transform',
             }}
-          />
+          >
+            <canvas
+              ref={thumbnailCanvasRef}
+              style={{
+                width: '100%',
+                height: '100%',
+                display: 'block',
+              }}
+            />
+          </div>
         </div>
       )}
 
       {/* Waveform */}
-      {hasWaveform && item.waveform && (
+      {hasWaveform && itemWaveform && (
         <div
           data-waveform-id={item.id}
           draggable={false}
@@ -804,7 +840,20 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
             contain: 'strict',
           }}
         >
-          {renderWaveform(item.waveform, width, waveformHeight)}
+          {/* 内容容器：通过 transform 平移显示正确的波形部分 */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              height: '100%',
+              transform: `translateX(${(-((item as any).sourceStartInFrames || 0) * pixelsPerFrame)}px)`,
+              willChange: 'transform',
+            }}
+          >
+            {itemWaveform ? renderWaveform(itemWaveform, waveformHeight) : null}
+          </div>
+
 
           {/* Volume control line */}
           {(item.type === 'audio' || item.type === 'video') && (() => {

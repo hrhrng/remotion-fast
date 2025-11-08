@@ -779,18 +779,16 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                       onDragStart={(e) => onItemDragStart(e, track.id, item)}
                       onDragEnd={onItemDragEnd}
                       onResize={(edge, deltaFrames) => {
-                        // 获取视频/音频素材的最大时长限制（以帧为单位）
-                        let maxDurationInFrames: number | undefined;
+                        // 获取素材总帧数
+                        let totalFramesForAsset: number | undefined;
                         if ((item.type === 'video' || item.type === 'audio') && 'src' in item) {
                           const asset = assets.find((a) => a.src === item.src);
                           if (asset?.duration) {
-                            // 将秒转换为帧 (按项目 fps)，考虑源偏移
-                            const totalFrames = Math.floor(asset.duration * fps);
-                            const offset = ((item as any).sourceStartInFrames || 0);
-                            maxDurationInFrames = Math.max(0, totalFrames - offset);
+                            totalFramesForAsset = Math.floor(asset.duration * fps);
                           }
                         }
 
+                        const currentOffset = ((item as any).sourceStartInFrames || 0);
                         let newFrom = item.from;
                         let newDuration = item.durationInFrames;
 
@@ -809,7 +807,33 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                           );
                           newFrom = snapped.snappedFrame;
                           newDuration = item.from + item.durationInFrames - newFrom;
+
+                          // 检查与同一 track 中其他 item 的重叠
+                          const otherItems = track.items.filter(i => i.id !== item.id);
+                          for (const other of otherItems) {
+                            const otherEnd = other.from + other.durationInFrames;
+                            // 如果新位置会与其他 item 重叠，限制在其右边缘
+                            if (newFrom < otherEnd && (item.from + item.durationInFrames) > other.from) {
+                              if (newFrom < otherEnd) {
+                                newFrom = otherEnd;
+                                newDuration = item.from + item.durationInFrames - newFrom;
+                              }
+                            }
+                          }
+
+                          // 计算新的源偏移
+                          const consumed = newFrom - item.from;
+                          const proposedOffset = Math.max(0, currentOffset + consumed);
+
+                          // 基于新的偏移来限制最大时长
+                          if (totalFramesForAsset !== undefined) {
+                            const maxDurByAsset = Math.max(0, totalFramesForAsset - proposedOffset);
+                            if (newDuration > maxDurByAsset) {
+                              newDuration = Math.max(15, maxDurByAsset);
+                            }
+                          }
                         } else {
+                          // 右侧 resize
                           const rawDuration = Math.max(15, item.durationInFrames + deltaFrames);
                           const rawRight = item.from + rawDuration;
 
@@ -824,11 +848,26 @@ export const TimelineTracksContainer: React.FC<TimelineTracksContainerProps> = (
                             timeline.snapThreshold
                           );
                           newDuration = Math.max(15, snapped.snappedFrame - item.from);
-                        }
 
-                        // 限制最大时长不超过素材实际时长（考虑源偏移）
-                        if (maxDurationInFrames && newDuration > maxDurationInFrames) {
-                          newDuration = maxDurationInFrames;
+                          // 检查与同一 track 中其他 item 的重叠
+                          const otherItems = track.items.filter(i => i.id !== item.id);
+                          for (const other of otherItems) {
+                            const newEnd = item.from + newDuration;
+                            // 如果新的右边缘会与其他 item 重叠，限制在其左边缘
+                            if (newEnd > other.from && item.from < (other.from + other.durationInFrames)) {
+                              if (newEnd > other.from) {
+                                newDuration = Math.max(15, other.from - item.from);
+                              }
+                            }
+                          }
+
+                          // 基于当前偏移来限制最大时长
+                          if (totalFramesForAsset !== undefined) {
+                            const maxDurByAsset = Math.max(0, totalFramesForAsset - currentOffset);
+                            if (newDuration > maxDurByAsset) {
+                              newDuration = Math.max(15, maxDurByAsset);
+                            }
+                          }
                         }
 
                         if (newDuration >= 15) {

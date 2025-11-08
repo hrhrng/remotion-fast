@@ -20,7 +20,11 @@ export const AssetPanel: React.FC = () => {
 
       video.addEventListener('loadedmetadata', async () => {
         try {
+          // Note: video.duration reads from container metadata, which may include
+          // extra audio beyond the video stream. This can cause a few frames difference
+          // compared to professional tools. Users can manually adjust in the timeline.
           const duration = video.duration;
+
           const frameInterval = 1.0; // 每1秒提取一帧
           const startTime = 0.5; // 从0.5秒开始
           const frameCount = Math.min(Math.floor((duration - startTime) / frameInterval) + 1, 100); // 最多100帧

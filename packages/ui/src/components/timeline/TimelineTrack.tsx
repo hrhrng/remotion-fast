@@ -83,44 +83,48 @@ export const TimelineTrack: React.FC<TimelineTrackProps> = ({
       const item = track.items.find((i) => i.id === itemId);
       if (!item) return;
 
-      // 获取视频/音频素材的最大时长限制（以帧为单位）
-      let maxDurationInFrames: number | undefined;
-      let sourceOffset = 0;
+      // 获取视频/音频素材的总时长（以帧为单位），用于约束逻辑剪裁
+      let totalFramesForAsset: number | undefined;
       if ((item.type === 'video' || item.type === 'audio') && 'src' in item) {
         const asset = assets.find((a) => a.src === item.src);
         if (asset?.duration) {
-          // Convert seconds to frames using project fps (no 30fps magic number)
-          const totalFrames = secondsToFrames(asset.duration, state.fps);
-          sourceOffset = (item as any).sourceStartInFrames || 0;
-          maxDurationInFrames = Math.max(0, totalFrames - sourceOffset);
+          totalFramesForAsset = secondsToFrames(asset.duration, state.fps);
         }
       }
 
       if (edge === 'left') {
-        // 调整起点和时长
+        // 调整起点和时长（左侧剪裁：可向左扩展/向右剪入）
         const newFrom = Math.max(0, item.from + deltaFrames);
         const newDuration = item.durationInFrames + (item.from - newFrom);
 
-        // 检查最小和最大限制
+        // 计算拟应用的 sourceStartInFrames（媒体项才有偏移），用于正确约束最大时长
+        const consumed = newFrom - item.from; // <0 表示向左扩展；>0 表示向右剪入
+        const currentOffset = ((item as any).sourceStartInFrames || 0);
+        const proposedOffset = Math.max(0, currentOffset + consumed);
+        const maxDurationWithProposedOffset = (totalFramesForAsset !== undefined)
+          ? Math.max(0, totalFramesForAsset - proposedOffset)
+          : undefined;
+
+        // 检查最小和最大限制（基于“拟应用偏移”的可用时长），允许向左扩展
         const isValidDuration = newDuration >= 15 &&
-          (!maxDurationInFrames || newDuration <= maxDurationInFrames);
+          (!maxDurationWithProposedOffset || newDuration <= maxDurationWithProposedOffset);
 
         if (isValidDuration) {
-          const consumed = newFrom - item.from;
-          const newSourceOffset = Math.max(0, ((item as any).sourceStartInFrames || 0) + consumed);
           onUpdateItem(itemId, {
             from: newFrom,
             durationInFrames: newDuration,
-            ...(item.type === 'video' || item.type === 'audio' ? { sourceStartInFrames: newSourceOffset } : {}),
+            ...(item.type === 'video' || item.type === 'audio' ? { sourceStartInFrames: proposedOffset } : {}),
           } as any);
         }
       } else {
-        // 调整时长
+        // 调整时长（右侧剪裁：向右扩展/向左剪出）
         let newDuration = Math.max(15, item.durationInFrames + deltaFrames);
 
-        // 限制最大时长不超过素材实际时长
-        if (maxDurationInFrames && newDuration > maxDurationInFrames) {
-          newDuration = maxDurationInFrames;
+        // 限制最大时长不超过素材实际可用时长（基于当前偏移）
+        if (totalFramesForAsset !== undefined) {
+          const currentOffset = ((item as any).sourceStartInFrames || 0);
+          const maxDuration = Math.max(0, totalFramesForAsset - currentOffset);
+          if (newDuration > maxDuration) newDuration = maxDuration;
         }
 
         onUpdateItem(itemId, {

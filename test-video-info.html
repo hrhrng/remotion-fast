@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Video Info Test</title>
+</head>
+<body>
+    <h1>Video Information</h1>
+    <input type="file" id="fileInput" accept="video/*">
+    <pre id="output"></pre>
+
+    <script>
+        document.getElementById('fileInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const video = document.createElement('video');
+            video.src = URL.createObjectURL(file);
+            video.preload = 'metadata';
+
+            video.addEventListener('loadedmetadata', () => {
+                const duration = video.duration;
+                const fps = 30; // 假设是30fps
+
+                // 计算理论帧数
+                const exactFrames = duration * fps;
+                const floorFrames = Math.floor(exactFrames);
+                const ceilFrames = Math.ceil(exactFrames);
+                const roundFrames = Math.round(exactFrames);
+                const floorWithEpsilon = Math.floor(duration * fps + 1e-6);
+
+                const output = `
+文件名: ${file.name}
+时长: ${duration} 秒
+视频宽度: ${video.videoWidth}
+视频高度: ${video.videoHeight}
+
+假设 FPS = 30:
+精确帧数 (duration * fps): ${exactFrames}
+Math.floor(exactFrames): ${floorFrames}
+Math.ceil(exactFrames): ${ceilFrames}
+Math.round(exactFrames): ${roundFrames}
+Math.floor(duration * fps + 1e-6): ${floorWithEpsilon}
+
+当前代码使用: Math.floor(duration * fps + 1e-6) = ${floorWithEpsilon}
+                `;
+
+                document.getElementById('output').textContent = output;
+                URL.revokeObjectURL(video.src);
+            });
+        });
+    </script>
+</body>
+</html>

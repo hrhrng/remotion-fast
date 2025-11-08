@@ -107,6 +107,7 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
 
     case 'SPLIT_ITEM': {
       const { trackId, itemId, splitFrame } = action.payload;
+      console.log('🔪 SPLIT_ITEM action triggered:', { trackId, itemId, splitFrame });
 
       return {
         ...state,
@@ -116,70 +117,87 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
           const newItems = t.items.flatMap((item) => {
             if (item.id !== itemId) return [item];
 
+            console.log('📋 Original item to split:', JSON.stringify(item, null, 2));
+
             // Check if split frame is within item bounds
             const itemEnd = item.from + item.durationInFrames;
+            console.log(`📏 Item bounds: from=${item.from}, end=${itemEnd}, splitFrame=${splitFrame}`);
+
             if (splitFrame <= item.from || splitFrame >= itemEnd) {
-              // Split frame is not within item bounds, keep original
+              console.warn('⚠️ Split frame out of bounds, keeping original item');
               return [item];
             }
 
-            // Calculate durations for split items
+            // Step 1: Copy - 创建副本并修改 ID
+            const cleanBase = (it: any) => {
+              const clone = { ...it };
+              delete clone.sourceMinStartInFrames;
+              delete clone.sourceMaxEndInFrames;
+              delete clone.justInserted;
+              return clone;
+            };
+
+            const secondItem: any = {
+              ...cleanBase(item),
+              id: `${item.id}-split-${Date.now()}`,
+            };
+
+            // Step 2: 第一个 item - 保留前半部分
             const firstDuration = splitFrame - item.from;
-            const secondDuration = itemEnd - splitFrame;
+            const currentOffset = (item as any).sourceStartInFrames || 0;
 
-            // Determine in-source offset (for media items); default to 0
-            const currentOffset =
-              (item as any).sourceStartInFrames ? (item as any).sourceStartInFrames as number : 0;
-            const offsetIncrement = firstDuration; // frames consumed by the first piece
-
-            // Create first part (keeps original id)
-            const firstItem: Item = {
-              ...item,
+            const firstItem: any = {
+              ...cleanBase(item),
               durationInFrames: firstDuration,
-              // Preserve existing in-source offset for media
+              // 保持原始的 sourceStartInFrames，不添加任何人工锁
+              // 素材的天然边界会自动限制扩展范围
               ...(item.type === 'video' || item.type === 'audio'
-                ? { sourceStartInFrames: currentOffset }
+                ? {
+                    sourceStartInFrames: currentOffset,
+                  }
                 : {}),
             };
 
-            // Create second part (new id)
-            const secondItem: Item = {
-              ...item,
-              id: `${item.id}-split-${Date.now()}`,
+            // Step 3: 第二个 item - 保留后半部分
+            const secondDuration = itemEnd - splitFrame;
+            const consumedFrames = splitFrame - item.from;
+            const newSourceOffset = currentOffset + consumedFrames;
+
+            Object.assign(secondItem, {
               from: splitFrame,
               durationInFrames: secondDuration,
-              // Second piece starts later in the source
+              // 设置新的 sourceStartInFrames 到 split 点，不添加任何人工锁
+              // 素材的天然边界会自动限制扩展范围
               ...(item.type === 'video' || item.type === 'audio'
-                ? { sourceStartInFrames: currentOffset + offsetIncrement }
+                ? {
+                    sourceStartInFrames: newSourceOffset,
+                  }
                 : {}),
-            };
+              // Mark as justInserted so TimelineItem will regenerate thumbnail
+              justInserted: item.type === 'video',
+            });
 
-            // Debug: log split details for verification
-            try {
-              console.log('[SPLIT_ITEM] split', {
-                trackId,
-                itemId: item.id,
-                splitFrame,
-                itemFrom: item.from,
-                itemDuration: item.durationInFrames,
-                first: {
-                  id: firstItem.id,
-                  from: (firstItem as any).from,
-                  duration: firstItem.durationInFrames,
-                  sourceStartInFrames: (firstItem as any).sourceStartInFrames || 0,
-                },
-                second: {
-                  id: secondItem.id,
-                  from: (secondItem as any).from,
-                  duration: secondItem.durationInFrames,
-                  sourceStartInFrames: (secondItem as any).sourceStartInFrames || 0,
-                },
-              });
-            } catch {}
+            console.log('✂️ Split result:');
+            console.log('  Original item:', JSON.stringify(item, null, 2));
+            console.log('  First item (right trim):', JSON.stringify(firstItem, null, 2));
+            console.log('  Second item (left trim):', JSON.stringify(secondItem, null, 2));
 
-            return [firstItem, secondItem];
+            // 检查差异
+            const origKeys = Object.keys(item).sort();
+            const firstKeys = Object.keys(firstItem).sort();
+            const secondKeys = Object.keys(secondItem).sort();
+            console.log('  Keys comparison:', {
+              original: origKeys,
+              first: firstKeys,
+              second: secondKeys,
+              missingInFirst: origKeys.filter(k => !firstKeys.includes(k)),
+              missingInSecond: origKeys.filter(k => !secondKeys.includes(k))
+            });
+
+            return [firstItem as Item, secondItem as Item];
           });
 
+          console.log('📦 New items array after split:', newItems.map(i => ({ id: i.id, from: i.from, duration: i.durationInFrames })));
           return { ...t, items: newItems };
         }),
       };
