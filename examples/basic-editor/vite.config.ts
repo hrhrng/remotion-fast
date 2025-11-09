@@ -4,6 +4,7 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
+  base: process.env.VITE_BASE || '/',
   server: {
     port: 3001,
     watch: {
@@ -14,5 +15,17 @@ export default defineConfig({
   optimizeDeps: {
     // 排除 workspace 包，使其始终使用最新编译结果
     exclude: ['@remotion-fast/core', '@remotion-fast/ui', '@remotion-fast/remotion-components'],
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          remotion: ['remotion', '@remotion/player'],
+        },
+      },
+    },
   },
 });

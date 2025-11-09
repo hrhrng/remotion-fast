@@ -2,11 +2,11 @@ name: Deploy example to GitHub Pages
 
 on:
   push:
-    branches: [ main ]
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -17,45 +17,48 @@ concurrency:
 env:
   EXAMPLE_WS: examples/basic-editor
   BUILD_DIR: examples/basic-editor/dist
-  TURBO_CACHE_DIR: .turbo
 
 jobs:
   build:
+    name: Build and Deploy
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      # ✅ Turbo cache & node_modules cache
-      - name: Restore caches
-        uses: actions/cache@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          path: |
-            node_modules
-            packages/*/node_modules
-            examples/*/node_modules
-            .turbo
-          key: deps-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            deps-
+          version: 10
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
+          cache: 'pnpm'
 
-      - name: Install deps
-        run: npm --workspaces=false ci
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-      # ✅ Turbo build (并行+增量缓存)
-      - name: Build workspaces
+      - name: Build packages
+        run: pnpm build:packages
+
+      - name: Build example
         env:
           NODE_OPTIONS: "--max_old_space_size=4096"
           VITE_BASE: "/${{ github.event.repository.name }}/"
-        run: npm run build
+        run: pnpm --filter=basic-editor-example build
 
-      - name: Check build
+      - name: Check build output
         run: |
-          test -d "$BUILD_DIR" || (echo "❌ Build output not found" && exit 1)
+          if [ ! -d "$BUILD_DIR" ]; then
+            echo "❌ Build output not found at $BUILD_DIR"
+            exit 1
+          fi
+          echo "✅ Build output found"
+          ls -la "$BUILD_DIR"
+          # Create 404.html for SPA routing
           cp "$BUILD_DIR/index.html" "$BUILD_DIR/404.html"
 
       - name: Setup Pages
@@ -66,11 +69,6 @@ jobs:
         with:
           path: ${{ env.BUILD_DIR }}
 
-  deploy:
-    environment: github-pages
-    runs-on: ubuntu-latest
-    needs: build
-
-    steps:
-      - name: Deploy
+      - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
