@@ -1007,7 +1007,7 @@ export const Timeline: React.FC = () => {
             id: `text-${Date.now()}`,
             type: 'text',
             text: 'Double click to edit',
-            color: '#000000',
+            color: '#ffffff',
             from: frame,
             durationInFrames: 90,
             fontSize: 60,

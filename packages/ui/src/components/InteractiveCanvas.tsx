@@ -49,6 +49,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   const playerRef = useRef<PlayerRef>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const selectionBoxRef = useRef<HTMLDivElement>(null);
+  const itemBoundsCache = useRef<Map<string, DOMRect>>(new Map());
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [hoverHandle, setHoverHandle] = useState<DragMode>(null);
   const [zoom, setZoom] = useState(1);
@@ -421,6 +422,63 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     };
   }, [selectedItemData, isItemVisible]);
 
+  // 为指定的 item 获取屏幕位置（用于透明 div）
+  const getItemScreenPosition = useCallback(
+    (item: Item) => {
+      if (!item.properties) return null;
+      if (!containerRef.current) return null;
+
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const aspectRatio = compositionWidth / compositionHeight;
+
+      // 基础的 Player 尺寸（未应用缩放和平移之前）
+      let basePlayerWidth: number, basePlayerHeight: number, playerOffsetX: number, playerOffsetY: number;
+      if (aspectRatio > containerRect.width / containerRect.height) {
+        basePlayerWidth = containerRect.width;
+        basePlayerHeight = containerRect.width / aspectRatio;
+        playerOffsetX = 0;
+        playerOffsetY = (containerRect.height - basePlayerHeight) / 2;
+      } else {
+        basePlayerHeight = containerRect.height;
+        basePlayerWidth = containerRect.height * aspectRatio;
+        playerOffsetX = (containerRect.width - basePlayerWidth) / 2;
+        playerOffsetY = 0;
+      }
+
+      // 叠加外层 transform 的缩放与平移
+      const scale0 = basePlayerWidth / compositionWidth; // 未缩放前的比例
+      const scale = scale0 * zoom; // 实际视觉比例
+
+      // Player 的视觉中心（考虑平移 panOffset）
+      const playerCenterX = playerOffsetX + basePlayerWidth / 2 + panOffset.x / zoom;
+      const playerCenterY = playerOffsetY + basePlayerHeight / 2 + panOffset.y / zoom;
+
+      const itemXPx = item.properties.x ?? 0; // 以 composition 中心为原点的像素
+      const itemYPx = item.properties.y ?? 0;
+      const itemWidthPct = item.properties.width ?? 1; // 相对 composition 的比例
+      const itemHeightPct = item.properties.height ?? 1;
+
+      // 映射到屏幕坐标
+      const centerX = playerCenterX + itemXPx * scale;
+      const centerY = playerCenterY + itemYPx * scale;
+      const width = itemWidthPct * compositionWidth * scale;
+      const height = itemHeightPct * compositionHeight * scale;
+      const left = centerX - width / 2;
+      const top = centerY - height / 2;
+
+      return {
+        left,
+        top,
+        width,
+        height,
+        centerX,
+        centerY,
+        rotation: item.properties.rotation ?? 0,
+      };
+    },
+    [compositionWidth, compositionHeight, zoom, panOffset]
+  );
+
   const bounds = getItemBounds();
 
   // 统一的指针按下处理（同时处理选中和拖动）
@@ -428,15 +486,24 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     (e: React.MouseEvent) => {
       if (!onSelectItem) return;
       
-      // 如果点击的是控制手柄，交给手柄处理
-      if ((e.target as HTMLElement).closest('.control-handle')) {
+      // 如果点击的是控制手柄或缩放按钮，跳过
+      const target = e.target as HTMLElement;
+      if (target.closest('.control-handle') || target.closest('.zoom-controls')) {
+        return;
+      }
+
+      // 只处理直接点击 Player 区域的事件
+      // 排除点击其他 UI 元素（如按钮等）
+      if (target.tagName === 'BUTTON' || target.closest('button')) {
         return;
       }
 
       const { x, y } = screenToComposition(e.clientX, e.clientY);
       
+      console.log('[InteractiveCanvas] Click at:', { x, y });
+      
       // 查找点击位置最上层的元素
-      const target = findTopItemAtPoint(
+      const hitTarget = findTopItemAtPoint(
         x,
         y,
         tracks,
@@ -445,17 +512,17 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         compositionHeight
       );
 
-      if (target) {
+      if (hitTarget) {
         // 找到元素：选中并准备拖动
-        console.log('[InteractiveCanvas] Clicked item:', target.itemId);
-        if (selectedItemId !== target.itemId) {
-          onSelectItem(target.itemId);
+        console.log('[InteractiveCanvas] Clicked item:', hitTarget.itemId);
+        if (selectedItemId !== hitTarget.itemId) {
+          onSelectItem(hitTarget.itemId);
         }
         
         // 查找完整的 item 数据准备拖动
         const itemData = tracks
           .flatMap((t) => t.items.map((i) => ({ trackId: t.id, item: i })))
-          .find((x) => x.item.id === target.itemId);
+          .find((x) => x.item.id === hitTarget.itemId);
         
         if (itemData) {
           e.preventDefault();
@@ -498,9 +565,9 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   const aspectRatio = compositionWidth / compositionHeight;
 
   return (
-    <div style={styles.container} onMouseDown={handlePointerDown}>
+    <div style={styles.container}>
       {/* 缩放控制按钮 */}
-      <div style={styles.zoomControls}>
+      <div className="zoom-controls" style={styles.zoomControls}>
         <button onClick={handleZoomOut} style={styles.zoomButton} title="缩小 (Cmd/Ctrl + 滚轮)">
           −
         </button>
@@ -520,7 +587,13 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
           ...styles.playerWrapper,
           cursor: isPanning ? 'grabbing' : 'default',
         }}
-        onMouseDown={handleCanvasPan}
+        onMouseDown={(e) => {
+          handleCanvasPan(e);
+          // 点击空白区域取消选中
+          // 如果点击的是元素或控制手柄，他们会 stopPropagation，不会到达这里
+          console.log('[InteractiveCanvas] Clicked empty area, deselecting');
+          onSelectItem?.(null);
+        }}
       >
         <div
           style={{
@@ -558,7 +631,97 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
           </div>
         </div>
         
-        {/* 交互层 - 控制手柄 */}
+        {/* 交互层1 - 所有可见元素的透明点击区域 */}
+        <svg 
+          className="canvas-items"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'all',
+            zIndex: 1000,
+          }}
+        >
+          {/* 全屏透明背景，用于捕获空白点击 */}
+          <rect
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            fill="transparent"
+            style={{ pointerEvents: 'all' }}
+            onMouseDown={(e) => {
+              console.log('[InteractiveCanvas] Clicked empty background, deselecting');
+              onSelectItem?.(null);
+            }}
+          />
+          
+          {/* 为每个可见元素渲染透明点击区域 */}
+          {tracks.flatMap((track) =>
+            track.items
+              .filter((item) => 
+                item.properties &&
+                currentFrame >= item.from &&
+                currentFrame < item.from + item.durationInFrames
+              )
+              .map((item) => {
+                if (!item.properties) return null;
+                
+                // 使用统一的计算逻辑
+                const itemBounds = getItemScreenPosition(item);
+                if (!itemBounds) return null;
+                
+                return (
+                  <rect
+                    key={item.id}
+                    className="item-clickable"
+                    x={itemBounds.left}
+                    y={itemBounds.top}
+                    width={itemBounds.width}
+                    height={itemBounds.height}
+                    fill="transparent"
+                    style={{
+                      pointerEvents: 'all',
+                      cursor: 'pointer',
+                      transform: `rotate(${(item.properties?.rotation ?? 0)}deg)`,
+                      transformOrigin: `${itemBounds.centerX}px ${itemBounds.centerY}px`,
+                    }}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      
+                      // 选中该元素（如果未选中）
+                      if (onSelectItem && selectedItemId !== item.id) {
+                        onSelectItem(item.id);
+                      }
+                      
+                      // 准备拖动
+                      const { x, y } = screenToComposition(e.clientX, e.clientY);
+                      setDragState({
+                        mode: 'move',
+                        startX: x,
+                        startY: y,
+                        startProperties: {
+                          x: item.properties?.x ?? 0,
+                          y: item.properties?.y ?? 0,
+                          width: item.properties?.width ?? 1,
+                          height: item.properties?.height ?? 1,
+                          rotation: item.properties?.rotation ?? 0,
+                          opacity: item.properties?.opacity ?? 1,
+                        },
+                        item: item,
+                        trackId: track.id,
+                      });
+                    }}
+                  />
+                );
+              })
+          )}
+        </svg>
+        
+        {/* 交互层2 - 选中元素的蓝框和控制手柄 */}
         {bounds && selectedItemData && (
           <svg 
             className="canvas-controls"
@@ -568,10 +731,9 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
               left: 0,
               width: '100%',
               height: '100%',
-              pointerEvents: 'all',
-              zIndex: 1000,
+              pointerEvents: 'none',
+              zIndex: 1001,
             }}
-            onMouseDown={(e) => e.preventDefault()}
           >
           {/* 蓝色边框 */}
           <rect
@@ -590,7 +752,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
             }}
           />
           
-          {/* 透明的拖拽区域 */}
+          {/* 透明的拖拽区域（选中时覆盖在透明层上方，优先响应） */}
           <rect
             className="control-handle"
             x={bounds.left}
@@ -602,78 +764,82 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
               transform: `rotate(${bounds.rotation}deg)`,
               transformOrigin: `${bounds.centerX}px ${bounds.centerY}px`,
               cursor: 'move',
+              pointerEvents: 'all',
             }}
             onMouseDown={(e) => {
               e.stopPropagation();
+              e.preventDefault();
               handleMouseDown(e as any, 'move');
             }}
           />
 
-          {/* 四个角的缩放手柄 */}
-          {[
-            { pos: 'tl', x: bounds.left, y: bounds.top },
-            { pos: 'tr', x: bounds.left + bounds.width, y: bounds.top },
-            { pos: 'bl', x: bounds.left, y: bounds.top + bounds.height },
-            { pos: 'br', x: bounds.left + bounds.width, y: bounds.top + bounds.height },
-          ].map(({ pos, x, y }) => (
+            {/* 四个角的缩放手柄 */}
+            {[
+              { pos: 'tl', x: bounds.left, y: bounds.top },
+              { pos: 'tr', x: bounds.left + bounds.width, y: bounds.top },
+              { pos: 'bl', x: bounds.left, y: bounds.top + bounds.height },
+              { pos: 'br', x: bounds.left + bounds.width, y: bounds.top + bounds.height },
+            ].map(({ pos, x, y }) => (
+              <circle
+                key={pos}
+                className="control-handle"
+                cx={x}
+                cy={y}
+                r="6"
+                fill="#ffffff"
+                stroke="#0066ff"
+                strokeWidth="2"
+                style={{
+                  pointerEvents: 'all',
+                  cursor: `${pos.includes('t') ? 'n' : 's'}${pos.includes('l') ? 'w' : 'e'}-resize`,
+                  transform: `rotate(${bounds.rotation}deg)`,
+                  transformOrigin: `${bounds.centerX}px ${bounds.centerY}px`,
+                }}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  handleMouseDown(e as any, `scale-${pos}` as DragMode);
+                }}
+                onMouseEnter={() => setHoverHandle(`scale-${pos}` as DragMode)}
+                onMouseLeave={() => setHoverHandle(null)}
+              />
+            ))}
+
+            {/* 旋转手柄 */}
             <circle
-              key={pos}
               className="control-handle"
-              cx={x}
-              cy={y}
+              cx={bounds.centerX}
+              cy={bounds.top - 30}
               r="6"
               fill="#ffffff"
               stroke="#0066ff"
               strokeWidth="2"
               style={{
-                cursor: `${pos.includes('t') ? 'n' : 's'}${pos.includes('l') ? 'w' : 'e'}-resize`,
+                pointerEvents: 'all',
+                cursor: 'crosshair',
                 transform: `rotate(${bounds.rotation}deg)`,
                 transformOrigin: `${bounds.centerX}px ${bounds.centerY}px`,
               }}
               onMouseDown={(e) => {
                 e.stopPropagation();
-                handleMouseDown(e as any, `scale-${pos}` as DragMode);
+                handleMouseDown(e as any, 'rotate');
               }}
-              onMouseEnter={() => setHoverHandle(`scale-${pos}` as DragMode)}
+              onMouseEnter={() => setHoverHandle('rotate')}
               onMouseLeave={() => setHoverHandle(null)}
             />
-          ))}
-
-          {/* 旋转手柄 */}
-          <circle
-            className="control-handle"
-            cx={bounds.centerX}
-            cy={bounds.top - 30}
-            r="6"
-            fill="#ffffff"
-            stroke="#0066ff"
-            strokeWidth="2"
-            style={{
-              cursor: 'crosshair',
-              transform: `rotate(${bounds.rotation}deg)`,
-              transformOrigin: `${bounds.centerX}px ${bounds.centerY}px`,
-            }}
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              handleMouseDown(e as any, 'rotate');
-            }}
-            onMouseEnter={() => setHoverHandle('rotate')}
-            onMouseLeave={() => setHoverHandle(null)}
-          />
-          <line
-            className="control-handle"
-            x1={bounds.centerX}
-            y1={bounds.top}
-            x2={bounds.centerX}
-            y2={bounds.top - 30}
-            stroke="#0066ff"
-            strokeWidth="2"
-            style={{
-              transform: `rotate(${bounds.rotation}deg)`,
-              transformOrigin: `${bounds.centerX}px ${bounds.centerY}px`,
-              pointerEvents: 'none',
-            }}
-              />
+            <line
+              className="control-handle"
+              x1={bounds.centerX}
+              y1={bounds.top}
+              x2={bounds.centerX}
+              y2={bounds.top - 30}
+              stroke="#0066ff"
+              strokeWidth="2"
+              style={{
+                transform: `rotate(${bounds.rotation}deg)`,
+                transformOrigin: `${bounds.centerX}px ${bounds.centerY}px`,
+                pointerEvents: 'none',
+              }}
+            />
           </svg>
         )}
       </div>

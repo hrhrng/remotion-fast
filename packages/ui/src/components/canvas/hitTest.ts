@@ -12,12 +12,18 @@ export function testItemHit(
 ): boolean {
   const props = item.properties;
   
-  // 如果元素没有 properties，使用默认值（全屏居中）
-  const itemX = props?.x ?? 0;
-  const itemY = props?.y ?? 0;
-  const itemWidth = (props?.width ?? 1) * compositionWidth;
-  const itemHeight = (props?.height ?? 1) * compositionHeight;
-  const rotation = (props?.rotation ?? 0) * (Math.PI / 180);
+  // 如果元素没有 properties，跳过（不应该被点击）
+  if (!props) {
+    console.log(`[hitTest] Item ${item.id} has no properties, skipping`);
+    return false;
+  }
+  
+  // 元素位置和大小（x,y 是相对于中心的偏移）
+  const itemX = props.x ?? 0;
+  const itemY = props.y ?? 0;
+  const itemWidth = (props.width ?? 1) * compositionWidth;
+  const itemHeight = (props.height ?? 1) * compositionHeight;
+  const rotation = (props.rotation ?? 0) * (Math.PI / 180);
 
   // 将点击坐标转换到元素的本地坐标系（反向旋转）
   const dx = clickX - itemX;
@@ -32,12 +38,31 @@ export function testItemHit(
   const halfWidth = itemWidth / 2;
   const halfHeight = itemHeight / 2;
 
-  return (
+  const isHit = (
     localX >= -halfWidth &&
     localX <= halfWidth &&
     localY >= -halfHeight &&
     localY <= halfHeight
   );
+
+  console.log(`[hitTest] Item ${item.id}:`, {
+    clickX,
+    clickY,
+    itemX,
+    itemY,
+    itemWidth,
+    itemHeight,
+    rotation: props.rotation ?? 0,
+    dx,
+    dy,
+    localX,
+    localY,
+    halfWidth,
+    halfHeight,
+    isHit,
+  });
+
+  return isHit;
 }
 
 /**

@@ -180,31 +180,73 @@ export const AssetPanel: React.FC = () => {
   };
 
   const handleAddTextToTrack = () => {
-    // Always create a new track when adding items from the panel
-    const trackId = `track-${Date.now()}`;
+    const newItemDuration = 90; // 3 seconds at 30fps
+    const newItemFrom = state.currentFrame;
+    const newItemTo = newItemFrom + newItemDuration;
 
-    // First create a new track
-    dispatch({
-      type: 'ADD_TRACK',
-      payload: {
-        id: trackId,
-        name: 'Text',
-        items: []
+    // 检测第一轨道是否有重叠
+    let trackId: string;
+    let needsNewTrack = false;
+
+    if (state.tracks.length === 0) {
+      // 没有轨道，创建新轨道
+      trackId = `track-${Date.now()}`;
+      needsNewTrack = true;
+    } else {
+      const firstTrack = state.tracks[0];
+      // 检查第一轨道上是否有元素与新元素时间范围重叠
+      const hasOverlap = firstTrack.items.some(item => {
+        const itemFrom = item.from;
+        const itemTo = item.from + item.durationInFrames;
+        // 两个时间范围重叠的条件：newItemFrom < itemTo && newItemTo > itemFrom
+        return newItemFrom < itemTo && newItemTo > itemFrom;
+      });
+
+      if (hasOverlap) {
+        // 有重叠，创建新轨道并插入到第一位置
+        trackId = `track-${Date.now()}`;
+        needsNewTrack = true;
+      } else {
+        // 无重叠，使用第一轨道
+        trackId = firstTrack.id;
       }
-    });
+    }
 
-    // Then add the text item to the new track
+    // 如果需要新轨道，先创建
+    if (needsNewTrack) {
+      dispatch({
+        type: 'INSERT_TRACK',
+        payload: {
+          track: {
+            id: trackId,
+            name: 'Text',
+            items: [],
+          },
+          index: 0, // 插入到第一位置
+        }
+      });
+    }
+
+    // 创建 text item
     const textItem: TextItem = {
       id: `text-${Date.now()}`,
       type: 'text',
       text: 'Double click to edit',
-      color: '#000000',
-      from: state.currentFrame,
-      durationInFrames: 90, // 3 seconds at 30fps
+      color: '#ffffff',
+      from: newItemFrom,
+      durationInFrames: newItemDuration,
       fontSize: 60,
+      properties: {
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        rotation: 0,
+        opacity: 1,
+      },
     };
 
-    // Use setTimeout to ensure track is created first
+    // 使用 setTimeout 确保轨道先创建
     setTimeout(() => {
       dispatch({
         type: 'ADD_ITEM',
@@ -260,29 +302,71 @@ export const AssetPanel: React.FC = () => {
             </button>
             <button
               onClick={() => {
-                // Always create a new track when adding items from the panel
-                const trackId = `track-${Date.now()}`;
+                const newItemDuration = 30; // 1 second at 30fps (smaller initial size)
+                const newItemFrom = state.currentFrame;
+                const newItemTo = newItemFrom + newItemDuration;
 
-                // First create a new track
-                dispatch({
-                  type: 'ADD_TRACK',
-                  payload: {
-                    id: trackId,
-                    name: 'Solid',
-                    items: []
+                // 检测第一轨道是否有重叠
+                let trackId: string;
+                let needsNewTrack = false;
+
+                if (state.tracks.length === 0) {
+                  // 没有轨道，创建新轨道
+                  trackId = `track-${Date.now()}`;
+                  needsNewTrack = true;
+                } else {
+                  const firstTrack = state.tracks[0];
+                  // 检查第一轨道上是否有元素与新元素时间范围重叠
+                  const hasOverlap = firstTrack.items.some(item => {
+                    const itemFrom = item.from;
+                    const itemTo = item.from + item.durationInFrames;
+                    // 两个时间范围重叠的条件：newItemFrom < itemTo && newItemTo > itemFrom
+                    return newItemFrom < itemTo && newItemTo > itemFrom;
+                  });
+
+                  if (hasOverlap) {
+                    // 有重叠，创建新轨道并插入到第一位置
+                    trackId = `track-${Date.now()}`;
+                    needsNewTrack = true;
+                  } else {
+                    // 无重叠，使用第一轨道
+                    trackId = firstTrack.id;
                   }
-                });
+                }
 
-                // Then add the solid item to the new track
+                // 如果需要新轨道，先创建
+                if (needsNewTrack) {
+                  dispatch({
+                    type: 'INSERT_TRACK',
+                    payload: {
+                      track: {
+                        id: trackId,
+                        name: 'Solid',
+                        items: [],
+                      },
+                      index: 0, // 插入到第一位置
+                    }
+                  });
+                }
+
+                // 创建 solid item
                 const solidItem = {
                   id: `solid-${Date.now()}`,
                   type: 'solid' as const,
                   color: '#' + Math.floor(Math.random() * 16777215).toString(16),
-                  from: state.currentFrame,
-                  durationInFrames: 60,
+                  from: newItemFrom,
+                  durationInFrames: newItemDuration,
+                  properties: {
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 1,
+                    rotation: 0,
+                    opacity: 1,
+                  },
                 };
 
-                // Use setTimeout to ensure track is created first
+                // 使用 setTimeout 确保轨道先创建
                 setTimeout(() => {
                   dispatch({
                     type: 'ADD_ITEM',
