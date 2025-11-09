@@ -48,7 +48,7 @@ jobs:
           VITE_BASE: "/${{ github.event.repository.name }}/"
         run: |
           cd examples/basic-editor
-          vite build
+          npx vite build
 
       - name: Check build output
         run: |

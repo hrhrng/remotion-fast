@@ -6,7 +6,7 @@
     "dev": "pnpm -r --filter='packages/*' --parallel dev & vite",
     "editor": "vite",
     "remotion": "npx remotion studio",
-    "build": "vite build",
+    "build": "npx vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
