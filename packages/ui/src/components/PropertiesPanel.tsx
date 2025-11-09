@@ -43,50 +43,36 @@ export const PropertiesPanel: React.FC = () => {
           {/* Canvas Section */}
           <div style={styles.section}>
             <h3 style={styles.sectionTitle}>Canvas</h3>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
-              <div style={{ flex: 1 }}>
-                <label style={styles.label}>W</label>
-                <input
-                  type="number"
-                  value={state.compositionWidth}
-                  onChange={(e) => dispatch({
-                    type: 'SET_COMPOSITION_SIZE',
-                    payload: {
-                      width: parseInt(e.target.value) || 1920,
-                      height: state.compositionHeight,
-                    },
-                  })}
-                  style={styles.input}
-                />
+            
+            <div style={styles.field}>
+              <label style={styles.label}>Aspect Ratio</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                {[
+                  { label: '16:9', w: 1920, h: 1080 },
+                  { label: '9:16', w: 1080, h: 1920 },
+                  { label: '4:3', w: 1440, h: 1080 },
+                  { label: '1:1', w: 1080, h: 1080 },
+                  { label: '21:9', w: 2560, h: 1080 },
+                  { label: '4:5', w: 1080, h: 1350 },
+                ].map(preset => (
+                  <button
+                    key={preset.label}
+                    onClick={() => dispatch({
+                      type: 'SET_COMPOSITION_SIZE',
+                      payload: { width: preset.w, height: preset.h },
+                    })}
+                    style={{
+                      ...styles.presetButton,
+                      backgroundColor: 
+                        state.compositionWidth === preset.w && state.compositionHeight === preset.h
+                          ? '#0066ff'
+                          : '#2d2d2d',
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
               </div>
-              <div style={{ flex: 1 }}>
-                <label style={styles.label}>H</label>
-                <input
-                  type="number"
-                  value={state.compositionHeight}
-                  onChange={(e) => dispatch({
-                    type: 'SET_COMPOSITION_SIZE',
-                    payload: {
-                      width: state.compositionWidth,
-                      height: parseInt(e.target.value) || 1080,
-                    },
-                  })}
-                  style={styles.input}
-                />
-              </div>
-              <button
-                onClick={() => dispatch({
-                  type: 'SET_COMPOSITION_SIZE',
-                  payload: {
-                    width: state.compositionHeight,
-                    height: state.compositionWidth,
-                  },
-                })}
-                style={styles.iconButton}
-                title="Swap dimensions"
-              >
-                ⟲
-              </button>
             </div>
           </div>
 
@@ -608,6 +594,22 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '18px',
     lineHeight: '1',
     minWidth: '40px',
+  },
+  presetButton: {
+    padding: '8px',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: 500,
+    transition: 'background-color 0.2s',
+  },
+  dimensionDisplay: {
+    fontSize: '13px',
+    color: '#888888',
+    textAlign: 'center',
+    fontFamily: 'monospace',
   },
   durationDisplay: {
     fontSize: '24px',

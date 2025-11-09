@@ -100,7 +100,7 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
         <AbsoluteFill style={{ opacity: hidden ? 0 : 1, width: '100%', height: '100%' }}>
           <OffthreadVideo
             src={item.src}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
             startFrom={sourceStart}
             pauseWhenBuffering={false}
             acceptableTimeShiftInSeconds={0.25}
@@ -126,7 +126,7 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
           alignItems: 'center',
         })}
       >
-        <Img src={item.src} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'cover' }} />
+        <Img src={item.src} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
       </AbsoluteFill>
     );
   }
@@ -201,7 +201,7 @@ const TrackComponent: React.FC<{ track: Track; globalEndFrame: number; trackZInd
 };
 
 // Main composition component
-export const VideoComposition: React.FC<{ tracks: Track[] }> = ({ tracks }) => {
+export const VideoComposition: React.FC<{ tracks: Track[]; selectedItemId?: string | null; selectionBoxRef?: React.RefObject<HTMLDivElement | null> }> = ({ tracks, selectedItemId, selectionBoxRef }) => {
   console.log('🎬 VideoComposition render', {
     trackCount: tracks.length,
     tracks: tracks.map(t => ({
@@ -224,8 +224,18 @@ export const VideoComposition: React.FC<{ tracks: Track[] }> = ({ tracks }) => {
     return maxEnd;
   }, [tracks]);
 
+  // 找到选中的 item 和它的 properties
+  const selectedItem = React.useMemo(() => {
+    if (!selectedItemId) return null;
+    for (const track of tracks) {
+      const item = track.items.find((i) => i.id === selectedItemId);
+      if (item) return item;
+    }
+    return null;
+  }, [tracks, selectedItemId]);
+
   return (
-    <AbsoluteFill style={{ backgroundColor: 'white', top: 0, left: 0, right: 0, bottom: 0 }}>
+    <AbsoluteFill style={{ backgroundColor: 'black', top: 0, left: 0, right: 0, bottom: 0 }}>
       {tracks.map((track, trackIndex) => {
         // Track 0 (first/top) should have highest z-index
         // Higher index = lower in timeline = lower z-index
@@ -234,6 +244,25 @@ export const VideoComposition: React.FC<{ tracks: Track[] }> = ({ tracks }) => {
           <TrackComponent key={track.id} track={track} globalEndFrame={globalEndFrame} trackZIndex={trackZIndex} />
         );
       })}
+      
+      {/* 选择框 - 透明的，只用于提供 ref（不包含旋转） */}
+      {selectedItem && selectedItem.properties && (
+        <AbsoluteFill style={{ pointerEvents: 'none', zIndex: 9999 }}>
+          <div
+            ref={selectionBoxRef}
+            style={{
+              position: 'absolute',
+              left: `calc(50% + ${selectedItem.properties.x}px)`,
+              top: `calc(50% + ${selectedItem.properties.y}px)`,
+              width: `${selectedItem.properties.width * 100}%`,
+              height: `${selectedItem.properties.height * 100}%`,
+              transform: `translate(-50%, -50%)`,
+              // 不显示边框，不包含旋转，只用于获取未旋转的位置和尺寸
+              boxSizing: 'border-box',
+            }}
+          />
+        </AbsoluteFill>
+      )}
     </AbsoluteFill>
   );
 };

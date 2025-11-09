@@ -1,7 +1,6 @@
-import React, { useRef, useEffect, useMemo, useState } from "react";
-import { Player, PlayerRef } from "@remotion/player";
+import React, { useMemo, useState, useEffect } from "react";
 import { useEditor } from "@remotion-fast/core";
-import { VideoComposition } from "@remotion-fast/remotion-components";
+import { InteractiveCanvas } from "./InteractiveCanvas";
 
 // Time formatting utilities
 const formatTime = (frame: number, fps: number) => {
@@ -19,7 +18,6 @@ const formatTime = (frame: number, fps: number) => {
 
 export const CanvasPreview: React.FC = () => {
   const { state, dispatch } = useEditor();
-  const playerRef = useRef<PlayerRef>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   // Calculate duration from timeline (max end frame of all items)
@@ -33,81 +31,6 @@ export const CanvasPreview: React.FC = () => {
     }
     return maxEnd > 0 ? maxEnd : 300; // 300 frames = 10 seconds at 30fps as fallback
   }, [state.tracks]);
-
-  // Prepare input props for the Player
-  const inputProps = useMemo(() => {
-    return {
-      tracks: state.tracks,
-    };
-  }, [state.tracks]);
-
-  // Track whether we're syncing from player to avoid feedback loops
-  const isSyncingFromPlayer = useRef(false);
-  const lastDispatchTsRef = useRef(0);
-  const lastDispatchedFrameRef = useRef<number | null>(null);
-
-  // Sync player frame with editor state (timeline → preview)
-  useEffect(() => {
-    if (playerRef.current && !state.playing && !isSyncingFromPlayer.current) {
-      playerRef.current.seekTo(state.currentFrame);
-    }
-  }, [state.currentFrame, state.playing]);
-
-  // Update playing state
-  useEffect(() => {
-    if (playerRef.current) {
-      if (state.playing) {
-        playerRef.current.play();
-      } else {
-        playerRef.current.pause();
-      }
-    }
-  }, [state.playing]);
-
-  // Throttled sync from preview → timeline to avoid re-rendering the entire UI every frame
-  const handleFrameUpdate = (frame: number) => {
-    if (lastDispatchedFrameRef.current === frame) return;
-
-    const now = performance.now();
-    const minIntervalMs = 40;
-    if (now - lastDispatchTsRef.current < minIntervalMs && state.playing)
-      return;
-
-    lastDispatchTsRef.current = now;
-    lastDispatchedFrameRef.current = frame;
-
-    if (frame !== state.currentFrame) {
-      isSyncingFromPlayer.current = true;
-      dispatch({ type: "SET_CURRENT_FRAME", payload: frame });
-      setTimeout(() => {
-        isSyncingFromPlayer.current = false;
-      }, 0);
-    }
-  };
-
-  // Attach player event listeners
-  useEffect(() => {
-    const player = playerRef.current as any;
-    if (!player) return;
-
-    const onFrame = () => {
-      const frame = player.getCurrentFrame();
-      handleFrameUpdate(frame);
-    };
-
-    const onPlay = () => dispatch({ type: "SET_PLAYING", payload: true });
-    const onPause = () => dispatch({ type: "SET_PLAYING", payload: false });
-
-    player.addEventListener("frameupdate", onFrame);
-    player.addEventListener("play", onPlay);
-    player.addEventListener("pause", onPause);
-
-    return () => {
-      player.removeEventListener("frameupdate", onFrame);
-      player.removeEventListener("play", onPlay);
-      player.removeEventListener("pause", onPause);
-    };
-  }, [dispatch]);
 
   // Format current and total time
   const currentTime = formatTime(state.currentFrame, state.fps);
@@ -151,33 +74,43 @@ export const CanvasPreview: React.FC = () => {
 
   return (
     <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>Canvas Preview</h2>
-      </div>
-
-      {/* Canvas Area */}
+      {/* Canvas Area with InteractiveCanvas */}
       <div style={styles.canvasWrapper}>
-        <div style={styles.canvas}>
-          <Player
-            ref={playerRef}
-            component={VideoComposition}
-            compositionWidth={state.compositionWidth}
-            compositionHeight={state.compositionHeight}
-            durationInFrames={timelineDuration}
-            fps={state.fps}
-            inputProps={inputProps}
-            style={{
-
-                   width: '100%',
-                  height: '100%',
-                  display: 'block',
-                  borderRadius: '8px',
-                  overflow: 'hidden',
-            }}
-            controls={false} // Disable default controls since we're building custom ones
-            loop={false}
-          />
-        </div>
+        <InteractiveCanvas
+          key="interactive-canvas"
+          tracks={state.tracks}
+          selectedItemId={state.selectedItemId}
+          currentFrame={state.currentFrame}
+          compositionWidth={state.compositionWidth}
+          compositionHeight={state.compositionHeight}
+          fps={state.fps}
+          durationInFrames={timelineDuration}
+          onUpdateItem={(trackId, itemId, updates) => {
+            dispatch({
+              type: "UPDATE_ITEM",
+              payload: { trackId, itemId, updates },
+            });
+          }}
+          onSelectItem={(itemId) => {
+            dispatch({
+              type: "SELECT_ITEM",
+              payload: itemId,
+            });
+          }}
+          playing={state.playing}
+          onFrameUpdate={(frame) => {
+            dispatch({
+              type: "SET_CURRENT_FRAME",
+              payload: frame,
+            });
+          }}
+          onPlayingChange={(playing) => {
+            dispatch({
+              type: "SET_PLAYING",
+              payload: playing,
+            });
+          }}
+        />
       </div>
 
       {/* Custom Controls */}
@@ -257,52 +190,24 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     height: "100%",
-    backgroundColor: "#1e1e1e",
-    borderRadius: "8px",
-    overflow: "hidden",
-  },
-  header: {
-    padding: "12px 16px",
-    backgroundColor: "#2d2d2d",
-    borderBottom: "1px solid #3d3d3d",
-  },
-  title: {
-    margin: 0,
-    fontSize: "16px",
-    fontWeight: 600,
-    color: "#ffffff",
+    backgroundColor: "#1a1a1a",
   },
   canvasWrapper: {
     flex: 1,
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: "20px",
-    backgroundColor: "#2a2a2a",
+    backgroundColor: "#1a1a1a",
     minWidth: 0,
     minHeight: 0,
   },
-  canvas: {
-    width: "100%",
-    maxWidth: "800px",
-    aspectRatio: "16 / 9",
-    backgroundColor: "#000000",
-    borderRadius: "8px",
-    overflow: "hidden",
-    boxShadow: "0 4px 20px rgba(0, 0, 0, 0.3)",
-    display: 'block',
-    transformOrigin: 'top left',
-  },
   controlsWrapper: {
-    padding: "16px",
-    backgroundColor: "#2d2d2d",
-    borderTop: "1px solid #3d3d3d",
+    padding: "12px 16px",
+    backgroundColor: "#1a1a1a",
+    borderTop: "1px solid #2a2a2a",
   },
   controls: {
     display: "flex",
     alignItems: "center",
     gap: "16px",
-    maxWidth: "800px",
+    maxWidth: "100%",
     margin: "0 auto",
   },
   playButton: {
