@@ -25,30 +25,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            **/package-lock.json
 
+      # 安装所有依赖（根 + 子包）
       - name: Install deps
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
-      - name: Build example workspace
-        env:
-          NODE_OPTIONS: "--max_old_space_size=4096"
-          VITE_BASE: "/${{ github.event.repository.name }}/"
-          PUBLIC_URL: "/${{ github.event.repository.name }}/"
+      # 构建所有库和示例（packages/* 与 examples/*）
+      - name: Build all workspaces
+        run: npm run build --workspaces --if-present
+
+      # 若只想部署 basic-editor，可再检查产物
+      - name: Verify build output
         run: |
-          pnpm -F $EXAMPLE_WS build
-          test -d "$BUILD_DIR" || (echo "Build output '$BUILD_DIR' not found" && exit 1)
+          test -d "$BUILD_DIR" || (echo "❌ Build output '$BUILD_DIR' not found" && exit 1)
+          # 为 SPA 路由准备 404.html
           if [ -f "$BUILD_DIR/index.html" ]; then cp "$BUILD_DIR/index.html" "$BUILD_DIR/404.html"; fi
-          # echo "example.com" > "$BUILD_DIR/CNAME"
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -59,9 +58,7 @@ jobs:
           path: ${{ env.BUILD_DIR }}
 
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    environment: github-pages
     runs-on: ubuntu-latest
     needs: build
     steps:
