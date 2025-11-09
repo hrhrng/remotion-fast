@@ -38,4 +38,6 @@ jobs:
         run: pnpm build:packages
       
       - name: Build examples
-        run: pnpm build:examples
+        run: |
+          cd examples/basic-editor
+          pnpm build

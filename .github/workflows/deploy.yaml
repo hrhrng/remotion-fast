@@ -46,7 +46,9 @@ jobs:
         env:
           NODE_OPTIONS: "--max_old_space_size=4096"
           VITE_BASE: "/${{ github.event.repository.name }}/"
-        run: pnpm --filter=basic-editor-example build
+        run: |
+          cd examples/basic-editor
+          pnpm build
 
       - name: Check build output
         run: |
