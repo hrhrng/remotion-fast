@@ -49,8 +49,9 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   const playerRef = useRef<PlayerRef>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const selectionBoxRef = useRef<HTMLDivElement>(null);
+  const itemsDomMapRef = useRef<Map<string, HTMLElement>>(new Map());
   const itemBoundsCache = useRef<Map<string, DOMRect>>(new Map());
-  const [dragState, setDragState] = useState<DragState | null>(null);
+  const [dragState, setDragState] = useState<DragMode | null>(null);
   const [hoverHandle, setHoverHandle] = useState<DragMode>(null);
   const [zoom, setZoom] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
@@ -109,6 +110,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     tracks,
     selectedItemId,
     selectionBoxRef,
+    itemsDomMapRef,
   }), [tracks, selectedItemId]);
 
   // 同步播放状态
@@ -422,62 +424,34 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     };
   }, [selectedItemData, isItemVisible]);
 
-  // 为指定的 item 获取屏幕位置（用于透明 div）
-  const getItemScreenPosition = useCallback(
-    (item: Item) => {
-      if (!item.properties) return null;
-      if (!containerRef.current) return null;
+  // 使用真实 DOM 位置计算（与 getItemBounds 完全一致）
+  const getItemScreenPosition = useCallback((item: Item) => {
+    if (!item?.id) return null;
+    const containerEl = containerRef.current;
+    if (!containerEl) return null;
 
-      const containerRect = containerRef.current.getBoundingClientRect();
-      const aspectRatio = compositionWidth / compositionHeight;
+    // 直接拿子层回填的真实 DOM
+    const el = itemsDomMapRef.current.get(item.id);
+    if (!el) return null;
 
-      // 基础的 Player 尺寸（未应用缩放和平移之前）
-      let basePlayerWidth: number, basePlayerHeight: number, playerOffsetX: number, playerOffsetY: number;
-      if (aspectRatio > containerRect.width / containerRect.height) {
-        basePlayerWidth = containerRect.width;
-        basePlayerHeight = containerRect.width / aspectRatio;
-        playerOffsetX = 0;
-        playerOffsetY = (containerRect.height - basePlayerHeight) / 2;
-      } else {
-        basePlayerHeight = containerRect.height;
-        basePlayerWidth = containerRect.height * aspectRatio;
-        playerOffsetX = (containerRect.width - basePlayerWidth) / 2;
-        playerOffsetY = 0;
-      }
+    const rect = el.getBoundingClientRect();
+    const containerRect = containerEl.getBoundingClientRect();
 
-      // 叠加外层 transform 的缩放与平移
-      const scale0 = basePlayerWidth / compositionWidth; // 未缩放前的比例
-      const scale = scale0 * zoom; // 实际视觉比例
+    const left = rect.left - containerRect.left;
+    const top = rect.top - containerRect.top;
+    const width = rect.width;
+    const height = rect.height;
 
-      // Player 的视觉中心（考虑平移 panOffset）
-      const playerCenterX = playerOffsetX + basePlayerWidth / 2 + panOffset.x / zoom;
-      const playerCenterY = playerOffsetY + basePlayerHeight / 2 + panOffset.y / zoom;
-
-      const itemXPx = item.properties.x ?? 0; // 以 composition 中心为原点的像素
-      const itemYPx = item.properties.y ?? 0;
-      const itemWidthPct = item.properties.width ?? 1; // 相对 composition 的比例
-      const itemHeightPct = item.properties.height ?? 1;
-
-      // 映射到屏幕坐标
-      const centerX = playerCenterX + itemXPx * scale;
-      const centerY = playerCenterY + itemYPx * scale;
-      const width = itemWidthPct * compositionWidth * scale;
-      const height = itemHeightPct * compositionHeight * scale;
-      const left = centerX - width / 2;
-      const top = centerY - height / 2;
-
-      return {
-        left,
-        top,
-        width,
-        height,
-        centerX,
-        centerY,
-        rotation: item.properties.rotation ?? 0,
-      };
-    },
-    [compositionWidth, compositionHeight, zoom, panOffset]
-  );
+    return {
+      left,
+      top,
+      width,
+      height,
+      centerX: left + width / 2,
+      centerY: top + height / 2,
+      rotation: item.properties?.rotation ?? 0, // 仅记录；AABB 已含旋转效果
+    };
+  }, [itemsDomMapRef]);
 
   const bounds = getItemBounds();
 
@@ -685,8 +659,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
                     style={{
                       pointerEvents: 'all',
                       cursor: 'pointer',
-                      transform: `rotate(${(item.properties?.rotation ?? 0)}deg)`,
-                      transformOrigin: `${itemBounds.centerX}px ${itemBounds.centerY}px`,
+                      // 不要再加旋转，因为 DOM 已经旋转过了！
                     }}
                     onMouseDown={(e) => {
                       e.stopPropagation();
@@ -746,8 +719,6 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
             stroke="#0066ff"
             strokeWidth="2"
             style={{
-              transform: `rotate(${bounds.rotation}deg)`,
-              transformOrigin: `${bounds.centerX}px ${bounds.centerY}px`,
               pointerEvents: 'none',
             }}
           />

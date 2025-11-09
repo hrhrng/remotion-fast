@@ -14,7 +14,7 @@ console.log('🎬 VideoComposition.tsx module loaded!');
 (window as any).REMOTION_DEBUG = true;
 
 // Component to render individual items
-const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFrom?: number; endFrame?: number; globalEndFrame?: number; trackZIndex: number }> = ({ item, durationInFrames, visibleFrom, endFrame, globalEndFrame, trackZIndex }) => {
+const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFrom?: number; endFrame?: number; globalEndFrame?: number; trackZIndex: number; itemsDomMapRef?: React.RefObject<Map<string, HTMLElement>> }> = ({ item, durationInFrames, visibleFrom, endFrame, globalEndFrame, trackZIndex, itemsDomMapRef }) => {
   const frame = useCurrentFrame();
   
   console.log('📦 ItemComponent render', {
@@ -54,7 +54,15 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
   };
 
   if (item.type === 'solid') {
-    return <AbsoluteFill style={applyTransform({ backgroundColor: item.color })} />;
+    return (
+      <AbsoluteFill
+        ref={(el) => {
+          if (!itemsDomMapRef?.current || !el) return;
+          itemsDomMapRef.current.set(item.id, el as HTMLElement);
+        }}
+        style={applyTransform({ backgroundColor: item.color })}
+      />
+    );
   }
 
   if (item.type === 'text') {
@@ -64,6 +72,10 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
 
     return (
       <AbsoluteFill
+        ref={(el) => {
+          if (!itemsDomMapRef?.current || !el) return;
+          itemsDomMapRef.current.set(item.id, el as HTMLElement);
+        }}
         style={applyTransform({
           justifyContent: 'center',
           alignItems: 'center',
@@ -96,7 +108,13 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
     const hidden = isBeforeVisible || shouldHideLastFrame;
 
     return (
-      <AbsoluteFill style={applyTransform({ backgroundColor: 'black' })}>
+      <AbsoluteFill
+        ref={(el) => {
+          if (!itemsDomMapRef?.current || !el) return;
+          itemsDomMapRef.current.set(item.id, el as HTMLElement);
+        }}
+        style={applyTransform({ backgroundColor: 'black' })}
+      >
         <AbsoluteFill style={{ opacity: hidden ? 0 : 1, width: '100%', height: '100%' }}>
           <OffthreadVideo
             src={item.src}
@@ -121,6 +139,10 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
   if (item.type === 'image') {
     return (
       <AbsoluteFill
+        ref={(el) => {
+          if (!itemsDomMapRef?.current || !el) return;
+          itemsDomMapRef.current.set(item.id, el as HTMLElement);
+        }}
         style={applyTransform({
           justifyContent: 'center',
           alignItems: 'center',
@@ -135,7 +157,7 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
 };
 
 // Component to render a single track
-const TrackComponent: React.FC<{ track: Track; globalEndFrame: number; trackZIndex: number }> = ({ track, globalEndFrame, trackZIndex }) => {
+const TrackComponent: React.FC<{ track: Track; globalEndFrame: number; trackZIndex: number; itemsDomMapRef?: React.RefObject<Map<string, HTMLElement>> }> = ({ track, globalEndFrame, trackZIndex, itemsDomMapRef }) => {
   if (track.hidden) {
     return null;
   }
@@ -192,7 +214,7 @@ const TrackComponent: React.FC<{ track: Track; globalEndFrame: number; trackZInd
 
         return (
           <Sequence key={item.id} from={seqFrom} durationInFrames={item.durationInFrames} premountFor={PREMOUNT_FRAMES}>
-            <ItemComponent item={item} durationInFrames={item.durationInFrames} visibleFrom={visibleFrom} endFrame={endFrame} globalEndFrame={globalEndFrame} trackZIndex={trackZIndex} />
+            <ItemComponent item={item} durationInFrames={item.durationInFrames} visibleFrom={visibleFrom} endFrame={endFrame} globalEndFrame={globalEndFrame} trackZIndex={trackZIndex} itemsDomMapRef={itemsDomMapRef} />
           </Sequence>
         );
       })}
@@ -201,7 +223,7 @@ const TrackComponent: React.FC<{ track: Track; globalEndFrame: number; trackZInd
 };
 
 // Main composition component
-export const VideoComposition: React.FC<{ tracks: Track[]; selectedItemId?: string | null; selectionBoxRef?: React.RefObject<HTMLDivElement | null> }> = ({ tracks, selectedItemId, selectionBoxRef }) => {
+export const VideoComposition: React.FC<{ tracks: Track[]; selectedItemId?: string | null; selectionBoxRef?: React.RefObject<HTMLDivElement | null>; itemsDomMapRef?: React.RefObject<Map<string, HTMLElement>> }> = ({ tracks, selectedItemId, selectionBoxRef, itemsDomMapRef }) => {
   console.log('🎬 VideoComposition render', {
     trackCount: tracks.length,
     tracks: tracks.map(t => ({
@@ -241,7 +263,7 @@ export const VideoComposition: React.FC<{ tracks: Track[]; selectedItemId?: stri
         // Higher index = lower in timeline = lower z-index
         const trackZIndex = tracks.length - trackIndex;
         return (
-          <TrackComponent key={track.id} track={track} globalEndFrame={globalEndFrame} trackZIndex={trackZIndex} />
+          <TrackComponent key={track.id} track={track} globalEndFrame={globalEndFrame} trackZIndex={trackZIndex} itemsDomMapRef={itemsDomMapRef} />
         );
       })}
       
