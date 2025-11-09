@@ -32,8 +32,8 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Install deps
-        run: npm ci
+      - name: Install deps (workspace support)
+        run: npm --workspaces=false ci
 
       # build 所有 packages + example
       - name: Build workspaces
