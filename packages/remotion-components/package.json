@@ -17,7 +17,8 @@
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --external react --external remotion",
-    "dev": "tsup src/index.ts --format cjs,esm --dts --external react --external remotion --watch"
+    "dev": "tsup src/index.ts --format cjs,esm --dts --external react --external remotion --watch",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "remotion",

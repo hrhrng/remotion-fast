@@ -4,6 +4,7 @@ import { CanvasPreview } from './CanvasPreview';
 import { Timeline } from './Timeline';
 import { AssetPanel } from './AssetPanel';
 import { PropertiesPanel } from './PropertiesPanel';
+import { PreviewCanvas } from './PreviewCanvas';
 
 export const Editor: React.FC = () => {
   const [showExportModal, setShowExportModal] = React.useState(false);

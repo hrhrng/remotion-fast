@@ -7,19 +7,6 @@ export const PreviewCanvas: React.FC = () => {
   const { state, dispatch } = useEditor();
   const playerRef = useRef<PlayerRef>(null);
 
-  // Calculate duration from timeline (max end frame of all items)
-  const timelineDuration = useMemo(() => {
-    let maxEnd = 0;
-    for (const track of state.tracks) {
-      for (const item of track.items) {
-        const end = item.from + item.durationInFrames;
-        if (end > maxEnd) maxEnd = end;
-      }
-    }
-    // Return at least 1 frame to avoid errors, or use a minimum default
-    return maxEnd > 0 ? maxEnd : 300; // 300 frames = 10 seconds at 30fps as fallback
-  }, [state.tracks]);
-
   // Prepare input props for the Player
   const inputProps = useMemo(() => {
     return {
@@ -97,6 +84,17 @@ export const PreviewCanvas: React.FC = () => {
     };
   }, [dispatch]);
 
+  console.log('🎥 PreviewCanvas state:', {
+    compositionWidth: state.compositionWidth,
+    compositionHeight: state.compositionHeight,
+    durationInFrames: state.durationInFrames,
+    fps: state.fps,
+    currentFrame: state.currentFrame,
+    trackCount: state.tracks.length,
+    tracks: state.tracks,
+    inputProps
+  });
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
@@ -109,7 +107,7 @@ export const PreviewCanvas: React.FC = () => {
             {state.playing ? 'Pause' : 'Play'}
           </button>
           <span style={styles.frameCounter}>
-            Frame: {state.currentFrame} / {timelineDuration}
+            Frame: {state.currentFrame} / {state.durationInFrames}
           </span>
         </div>
       </div>
@@ -119,7 +117,7 @@ export const PreviewCanvas: React.FC = () => {
           component={VideoComposition}
           compositionWidth={state.compositionWidth}
           compositionHeight={state.compositionHeight}
-          durationInFrames={timelineDuration}
+          durationInFrames={state.durationInFrames}
           fps={state.fps}
           inputProps={inputProps}
           style={{

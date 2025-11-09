@@ -230,6 +230,135 @@ export const PropertiesPanel: React.FC = () => {
 
       <div style={styles.content}>
         
+        {/* Transform Properties */}
+        <div style={styles.section}>
+          <h3 style={styles.sectionTitle}>Transform</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <div style={styles.field}>
+              <label style={styles.label}>X Position (px)</label>
+              <input
+                type="number"
+                step="1"
+                value={item.properties?.x ?? 0}
+                onChange={(e) => updateItem({ 
+                  properties: { 
+                    ...item.properties,
+                    x: parseFloat(e.target.value) || 0,
+                    y: item.properties?.y ?? 0,
+                    width: item.properties?.width ?? 1,
+                    height: item.properties?.height ?? 1,
+                  } 
+                })}
+                style={styles.input}
+              />
+            </div>
+            <div style={styles.field}>
+              <label style={styles.label}>Y Position (px)</label>
+              <input
+                type="number"
+                step="1"
+                value={item.properties?.y ?? 0}
+                onChange={(e) => updateItem({ 
+                  properties: { 
+                    ...item.properties,
+                    x: item.properties?.x ?? 0,
+                    y: parseFloat(e.target.value) || 0,
+                    width: item.properties?.width ?? 1,
+                    height: item.properties?.height ?? 1,
+                  } 
+                })}
+                style={styles.input}
+              />
+            </div>
+            <div style={styles.field}>
+              <label style={styles.label}>Width (0-1)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="2"
+                value={item.properties?.width ?? 1}
+                onChange={(e) => updateItem({ 
+                  properties: { 
+                    ...item.properties,
+                    x: item.properties?.x ?? 0,
+                    y: item.properties?.y ?? 0,
+                    width: parseFloat(e.target.value) || 0,
+                    height: item.properties?.height ?? 1,
+                  } 
+                })}
+                style={styles.input}
+              />
+            </div>
+            <div style={styles.field}>
+              <label style={styles.label}>Height (0-1)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="2"
+                value={item.properties?.height ?? 1}
+                onChange={(e) => updateItem({ 
+                  properties: { 
+                    ...item.properties,
+                    x: item.properties?.x ?? 0,
+                    y: item.properties?.y ?? 0,
+                    width: item.properties?.width ?? 1,
+                    height: parseFloat(e.target.value) || 0,
+                  } 
+                })}
+                style={styles.input}
+              />
+            </div>
+          </div>
+          <div style={styles.field}>
+            <label style={styles.label}>Rotation (degrees)</label>
+            <input
+              type="number"
+              step="1"
+              value={item.properties?.rotation ?? 0}
+              onChange={(e) => updateItem({ 
+                properties: { 
+                  ...item.properties,
+                  x: item.properties?.x ?? 0,
+                  y: item.properties?.y ?? 0,
+                  width: item.properties?.width ?? 1,
+                  height: item.properties?.height ?? 1,
+                  rotation: parseFloat(e.target.value) || 0,
+                } 
+              })}
+              style={styles.input}
+            />
+          </div>
+          <div style={styles.field}>
+            <label style={styles.label}>Opacity (0-1)</label>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              max="1"
+              value={item.properties?.opacity ?? 1}
+              onChange={(e) => updateItem({ 
+                properties: { 
+                  ...item.properties,
+                  x: item.properties?.x ?? 0,
+                  y: item.properties?.y ?? 0,
+                  width: item.properties?.width ?? 1,
+                  height: item.properties?.height ?? 1,
+                  opacity: parseFloat(e.target.value) ?? 1,
+                } 
+              })}
+              style={styles.input}
+            />
+          </div>
+          <div style={styles.field}>
+            <label style={styles.label}>Layer Order</label>
+            <div style={{ ...styles.input, backgroundColor: '#2d2d2d', color: '#aaaaaa', cursor: 'not-allowed' }}>
+              Controlled by track position
+            </div>
+          </div>
+        </div>
+
         {/* Common Properties */}
         <div style={styles.section}>
           <h3 style={styles.sectionTitle}>Timing</h3>

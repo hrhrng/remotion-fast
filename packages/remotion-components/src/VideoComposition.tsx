@@ -10,53 +10,65 @@ import {
 } from 'remotion';
 import type { Track, Item } from '@remotion-fast/core';
 
+console.log('🎬 VideoComposition.tsx module loaded!');
+(window as any).REMOTION_DEBUG = true;
+
 // Component to render individual items
-const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFrom?: number; endFrame?: number; globalEndFrame?: number }> = ({ item, durationInFrames, visibleFrom, endFrame, globalEndFrame }) => {
+const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFrom?: number; endFrame?: number; globalEndFrame?: number; trackZIndex: number }> = ({ item, durationInFrames, visibleFrom, endFrame, globalEndFrame, trackZIndex }) => {
   const frame = useCurrentFrame();
-
-  // Get item properties for positioning and transforms
-  const properties = item.properties || {
-    x: 0,
-    y: 0,
-    width: 1,
-    height: 1,
-    rotation: 0,
-    opacity: 1,
-    zIndex: 0,
-  };
-
-  // Calculate absolute positioning styles
-  const getPositionStyles = (): React.CSSProperties => ({
-    position: 'absolute',
-    left: `${properties.x * 100}%`,
-    top: `${properties.y * 100}%`,
-    width: `${properties.width * 100}%`,
-    height: `${properties.height * 100}%`,
-    transform: `rotate(${properties.rotation || 0}deg)`,
-    opacity: properties.opacity || 1,
-    zIndex: properties.zIndex || 0,
+  
+  console.log('📦 ItemComponent render', {
+    type: item.type,
+    id: item.id,
+    frame,
+    from: item.from,
+    duration: durationInFrames,
+    visibleFrom,
+    endFrame
   });
 
+  // Apply transform properties
+  const applyTransform = (baseStyle: React.CSSProperties = {}): React.CSSProperties => {
+    const props = item.properties;
+    if (!props) return { ...baseStyle, zIndex: trackZIndex };
+
+    // Position from center (x, y in pixels from canvas center)
+    // Canvas center is at 50%, 50%
+    const left = `calc(50% + ${props.x}px)`;
+    const top = `calc(50% + ${props.y}px)`;
+    const width = `${props.width * 100}%`;
+    const height = `${props.height * 100}%`;
+
+    return {
+      ...baseStyle,
+      position: 'absolute',
+      left,
+      top,
+      width,
+      height,
+      // translate(-50%, -50%) centers the item on the specified position
+      transform: `translate(-50%, -50%) rotate(${props.rotation || 0}deg)`,
+      opacity: props.opacity ?? 1,
+      zIndex: trackZIndex, // Use track-based z-index
+    };
+  };
+
   if (item.type === 'solid') {
-    return (
-      <div style={{ ...getPositionStyles(), backgroundColor: item.color }} />
-    );
+    return <AbsoluteFill style={applyTransform({ backgroundColor: item.color })} />;
   }
 
   if (item.type === 'text') {
-    const opacity = interpolate(frame, [0, 10], [0, 1], {
+    const fadeOpacity = interpolate(frame, [0, 10], [0, 1], {
       extrapolateRight: 'clamp',
     });
 
     return (
-      <div
-        style={{
-          ...getPositionStyles(),
-          display: 'flex',
+      <AbsoluteFill
+        style={applyTransform({
           justifyContent: 'center',
           alignItems: 'center',
-          opacity: opacity * (properties.opacity || 1),
-        }}
+          opacity: fadeOpacity,
+        })}
       >
         <h1
           style={{
@@ -66,12 +78,11 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
             fontWeight: item.fontWeight || 'bold',
             textAlign: 'center',
             padding: '0 40px',
-            margin: 0,
           }}
         >
           {item.text}
         </h1>
-      </div>
+      </AbsoluteFill>
     );
   }
 
@@ -85,15 +96,8 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
     const hidden = isBeforeVisible || shouldHideLastFrame;
 
     return (
-      <div style={getPositionStyles()}>
-        <div style={{ 
-          width: '100%', 
-          height: '100%', 
-          opacity: hidden ? 0 : 1,
-          backgroundColor: 'black',
-          borderRadius: '4px',
-          overflow: 'hidden'
-        }}>
+      <AbsoluteFill style={applyTransform({ backgroundColor: 'black' })}>
+        <AbsoluteFill style={{ opacity: hidden ? 0 : 1, width: '100%', height: '100%' }}>
           <OffthreadVideo
             src={item.src}
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -103,8 +107,8 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
             muted={hidden}
             volume={1}
           />
-        </div>
-      </div>
+        </AbsoluteFill>
+      </AbsoluteFill>
     );
   }
 
@@ -116,46 +120,14 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
 
   if (item.type === 'image') {
     return (
-      <div
-        style={{
-          ...getPositionStyles(),
-          display: 'flex',
+      <AbsoluteFill
+        style={applyTransform({
           justifyContent: 'center',
           alignItems: 'center',
-        }}
+        })}
       >
-        <Img 
-          src={item.src} 
-          style={{ 
-            width: '100%', 
-            height: '100%', 
-            objectFit: 'cover',
-            borderRadius: '4px'
-          }} 
-        />
-      </div>
-    );
-  }
-
-  if (item.type === 'sticker') {
-    return (
-      <div
-        style={{
-          ...getPositionStyles(),
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
-      >
-        <Img 
-          src={item.src} 
-          style={{ 
-            width: '100%', 
-            height: '100%', 
-            objectFit: 'contain'
-          }} 
-        />
-      </div>
+        <Img src={item.src} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'cover' }} />
+      </AbsoluteFill>
     );
   }
 
@@ -163,11 +135,12 @@ const ItemComponent: React.FC<{ item: Item; durationInFrames: number; visibleFro
 };
 
 // Component to render a single track
-const TrackComponent: React.FC<{ track: Track; globalEndFrame: number }> = ({ track, globalEndFrame }) => {
+const TrackComponent: React.FC<{ track: Track; globalEndFrame: number; trackZIndex: number }> = ({ track, globalEndFrame, trackZIndex }) => {
   if (track.hidden) {
     return null;
   }
-// 合并同源且时间/偏移连续的媒体分段（仅渲染层副本，不改state）
+
+  // 合并同源且时间/偏移连续的媒体分段（仅渲染层副本，不改state）
   const mergeContiguousMediaItems = (items: Item[]): Item[] => {
     const sorted = [...items].sort((a, b) => a.from - b.from);
     const result: Item[] = [];
@@ -205,7 +178,7 @@ const TrackComponent: React.FC<{ track: Track; globalEndFrame: number }> = ({ tr
   const PREMOUNT_FRAMES = 45; // ~1.5秒@30fps，提前挂载以减少边界卡顿
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <AbsoluteFill>
       {playbackItems.map((item, idx) => {
         const prev = idx > 0 ? playbackItems[idx - 1] : undefined;
         const isPrevContiguous = prev && (prev.type === item.type) && ('src' in prev) && ('src' in item)
@@ -219,16 +192,26 @@ const TrackComponent: React.FC<{ track: Track; globalEndFrame: number }> = ({ tr
 
         return (
           <Sequence key={item.id} from={seqFrom} durationInFrames={item.durationInFrames} premountFor={PREMOUNT_FRAMES}>
-            <ItemComponent item={item} durationInFrames={item.durationInFrames} visibleFrom={visibleFrom} endFrame={endFrame} globalEndFrame={globalEndFrame} />
+            <ItemComponent item={item} durationInFrames={item.durationInFrames} visibleFrom={visibleFrom} endFrame={endFrame} globalEndFrame={globalEndFrame} trackZIndex={trackZIndex} />
           </Sequence>
         );
       })}
-    </div>
+    </AbsoluteFill>
   );
 };
 
 // Main composition component
 export const VideoComposition: React.FC<{ tracks: Track[] }> = ({ tracks }) => {
+  console.log('🎬 VideoComposition render', {
+    trackCount: tracks.length,
+    tracks: tracks.map(t => ({
+      id: t.id,
+      hidden: t.hidden,
+      itemCount: t.items.length,
+      items: t.items.map(i => ({ type: i.type, id: i.id, from: i.from, duration: i.durationInFrames }))
+    }))
+  });
+
   // 计算全局最后一帧（与上面的 TrackComponent 用到的 globalEndFrame 保持一致）
   const globalEndFrame = React.useMemo(() => {
     let maxEnd = 0;
@@ -242,16 +225,15 @@ export const VideoComposition: React.FC<{ tracks: Track[] }> = ({ tracks }) => {
   }, [tracks]);
 
   return (
-    <div style={{ 
-      position: 'relative', 
-      width: '100%', 
-      height: '100%', 
-      backgroundColor: 'transparent',
-      overflow: 'hidden'
-    }}>
-      {tracks.map((track) => (
-        <TrackComponent key={track.id} track={track} globalEndFrame={globalEndFrame} />
-      ))}
-    </div>
+    <AbsoluteFill style={{ backgroundColor: 'white', top: 0, left: 0, right: 0, bottom: 0 }}>
+      {tracks.map((track, trackIndex) => {
+        // Track 0 (first/top) should have highest z-index
+        // Higher index = lower in timeline = lower z-index
+        const trackZIndex = tracks.length - trackIndex;
+        return (
+          <TrackComponent key={track.id} track={track} globalEndFrame={globalEndFrame} trackZIndex={trackZIndex} />
+        );
+      })}
+    </AbsoluteFill>
   );
 };

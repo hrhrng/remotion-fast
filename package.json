@@ -9,8 +9,11 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
     "dev": "npm run dev --workspace=examples/basic-editor",
-    "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist examples/*/node_modules"
+    "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist examples/*/node_modules",
+    "prebuild": "npm run typecheck",
+    "verify": "./scripts/verify.sh"
   },
   "keywords": [
     "remotion",

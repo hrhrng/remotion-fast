@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "vite",
+    "dev": "npx concurrently \"npm run dev -w @remotion-fast/core\" \"npm run dev -w @remotion-fast/remotion-components\" \"npm run dev -w @remotion-fast/ui\" \"vite\"",
     "editor": "vite",
     "remotion": "npx remotion studio",
     "build": "vite build",

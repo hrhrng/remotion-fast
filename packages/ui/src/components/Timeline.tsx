@@ -705,6 +705,16 @@ export const Timeline: React.FC = () => {
   // 创建素材项的辅助函数
   const createItemFromAsset = useCallback((asset: any, frame: number): Item | null => {
     const baseId = `item-${Date.now()}`;
+    
+    // 默认变换属性：画布中心 (0, 0)、全尺寸
+    const defaultProperties = {
+      x: 0,          // 中心X (像素，相对于画布中心)
+      y: 0,          // 中心Y (像素，相对于画布中心)
+      width: 1,      // 全宽 (0-1)
+      height: 1,     // 全高 (0-1)
+      rotation: 0,   // 无旋转
+      opacity: 1,    // 完全不透明
+    };
 
     switch (asset.type) {
       case 'video':
@@ -717,6 +727,7 @@ export const Timeline: React.FC = () => {
           src: asset.src,
           sourceStartInFrames: 0,
           waveform: asset.waveform,
+          properties: defaultProperties,
         } as Item;
       case 'audio':
         return {
@@ -727,6 +738,7 @@ export const Timeline: React.FC = () => {
           src: asset.src,
           sourceStartInFrames: 0,
           waveform: asset.waveform,
+          properties: defaultProperties,
         } as Item;
       case 'image':
         return {
@@ -735,6 +747,7 @@ export const Timeline: React.FC = () => {
           from: frame,
           durationInFrames: 90,
           src: asset.src,
+          properties: defaultProperties,
         } as Item;
       default:
         return null;
@@ -768,6 +781,15 @@ export const Timeline: React.FC = () => {
 
           if (isQuickAdd) {
             // Handle quick add items
+            const defaultProperties = {
+              x: 0,
+              y: 0,
+              width: 1,
+              height: 1,
+              rotation: 0,
+              opacity: 1,
+            };
+            
             if (quickAddType === 'text') {
               newItem = {
                 id: `text-${Date.now()}`,
@@ -777,6 +799,7 @@ export const Timeline: React.FC = () => {
                 from: 0,
                 durationInFrames: 90,
                 fontSize: 60,
+                properties: defaultProperties,
               } as Item;
             } else if (quickAddType === 'solid') {
               newItem = {
@@ -785,6 +808,7 @@ export const Timeline: React.FC = () => {
                 color: '#' + Math.floor(Math.random() * 16777215).toString(16),
                 from: 0,
                 durationInFrames: 60,
+                properties: defaultProperties,
               } as Item;
             }
           } else {
@@ -969,6 +993,15 @@ export const Timeline: React.FC = () => {
 
       if (isQuickAdd) {
         // Handle quick add items
+        const defaultProperties = {
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          rotation: 0,
+          opacity: 1,
+        };
+        
         if (quickAddType === 'text') {
           newItem = {
             id: `text-${Date.now()}`,
@@ -978,6 +1011,7 @@ export const Timeline: React.FC = () => {
             from: frame,
             durationInFrames: 90,
             fontSize: 60,
+            properties: defaultProperties,
           } as Item;
         } else if (quickAddType === 'solid') {
           newItem = {
@@ -986,6 +1020,7 @@ export const Timeline: React.FC = () => {
             color: '#' + Math.floor(Math.random() * 16777215).toString(16),
             from: frame,
             durationInFrames: 60,
+            properties: defaultProperties,
           } as Item;
         }
       } else {

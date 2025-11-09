@@ -120,16 +120,58 @@ remotion-fast/
 
 ## 🛠️ Development
 
-```bash
-# Build all packages
-npm run build
+### Quick Commands (using Makefile)
 
-# Run example in development
-npm run dev
+```bash
+# Start hot-reload dev server
+make dev
+
+# Restart dev server (kills and restarts)
+make restart
+
+# Stop all dev servers
+make kill
+
+# Build all packages
+make build
+
+# Run type check
+make typecheck
+
+# Verify (typecheck + build)
+make verify
+
+# Show all available commands
+make help
+```
+
+### Using pnpm directly
+
+```bash
+# Start development server
+pnpm run dev
+
+# Build all packages
+pnpm run build
+
+# Type check all packages
+pnpm run typecheck
 
 # Clean all build artifacts
-npm run clean
+pnpm run clean
 ```
+
+### Development Workflow
+
+1. Start dev server: `make dev`
+2. Edit code in `packages/*/src`
+3. Changes auto-compile and hot-reload
+4. Hard refresh browser if needed: `Cmd+Shift+R`
+5. Before committing: `make verify`
+
+**Troubleshooting**: If hot-reload isn't working, try `make restart`
+
+See [DEVELOPMENT.md](./DEVELOPMENT.md) for detailed development guide.
 
 ## 📄 License
 

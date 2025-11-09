@@ -1,12 +1,12 @@
 // Properties for positioning and transforming items on canvas
 export type ItemProperties = {
-  x: number; // X position on canvas (0-1, relative to canvas width)
-  y: number; // Y position on canvas (0-1, relative to canvas height)
+  x: number; // X position in pixels from canvas center
+  y: number; // Y position in pixels from canvas center
   width: number; // Width scale (0-1, relative to canvas width)
   height: number; // Height scale (0-1, relative to canvas height)
   rotation?: number; // Rotation in degrees
   opacity?: number; // Opacity (0-1)
-  zIndex?: number; // Z-index for layering
+  // Note: zIndex is determined by track order, not stored in properties
 };
 
 // Base types for timeline items
