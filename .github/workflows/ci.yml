@@ -40,4 +40,4 @@ jobs:
       - name: Build examples
         run: |
           cd examples/basic-editor
-          pnpm build
+          vite build

@@ -12,9 +12,12 @@ export default defineConfig({
       ignored: ['!**/node_modules/@remotion-fast/**'],
     },
   },
-  optimizeDeps: {
-    // 排除 workspace 包，使其始终使用最新编译结果
-    exclude: ['@remotion-fast/core', '@remotion-fast/ui', '@remotion-fast/remotion-components'],
+  resolve: {
+    alias: {
+      '@remotion-fast/core': path.resolve(__dirname, '../../packages/core/src'),
+      '@remotion-fast/ui': path.resolve(__dirname, '../../packages/ui/src'),
+      '@remotion-fast/remotion-components': path.resolve(__dirname, '../../packages/remotion-components/src'),
+    },
   },
   build: {
     outDir: 'dist',
